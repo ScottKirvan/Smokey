@@ -12,6 +12,8 @@
 
 * match feed events against canonical repo name, not stale Settings text ([7b9eb3d](https://github.com/ScottKirvan/Smokey/commit/7b9eb3d574e05519ba22c36807aa0046817dafde))
 
+Includes PRs: [#20](https://github.com/ScottKirvan/Smokey/pull/20), [#21](https://github.com/ScottKirvan/Smokey/pull/21)
+
 ## [0.1.0](https://github.com/ScottKirvan/Smokey/compare/v0.0.0...v0.1.0) (2026-09-06)
 
 
