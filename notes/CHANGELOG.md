@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/ScottKirvan/Smokey/compare/v0.1.0...v0.2.0) (2026-09-07)
+
+
+### Features
+
+* show GitHub API rate limit usage at the bottom of the page ([7efe071](https://github.com/ScottKirvan/Smokey/commit/7efe07115f1efe7a3da7f697181dcad8cfda93f8))
+
+
+### Bug Fixes
+
+* match feed events against canonical repo name, not stale Settings text ([7b9eb3d](https://github.com/ScottKirvan/Smokey/commit/7b9eb3d574e05519ba22c36807aa0046817dafde))
+
 ## [0.1.0](https://github.com/ScottKirvan/Smokey/compare/v0.0.0...v0.1.0) (2026-09-06)
 
 
