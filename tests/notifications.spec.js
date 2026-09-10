@@ -56,13 +56,15 @@ test.describe('mapNotification', () => {
     await page.goto('/index.html');
   });
 
-  test('extracts repo name, title, and a resolved url', async ({ page }) => {
+  test('extracts repo name, title, a resolved url, and the updated_at timestamp', async ({ page }) => {
     const item = await page.evaluate((n) => mapNotification(n), baseNotification({
       subject: { title: 'Fix the thing', type: 'Issue', url: 'https://api.github.com/repos/ScottKirvan/Smokey/issues/7' },
+      updated_at: '2026-03-04T00:00:00Z',
     }));
     expect(item.repoName).toBe('Smokey');
     expect(item.title).toBe('Fix the thing');
     expect(item.url).toBe('https://github.com/ScottKirvan/Smokey/issues/7');
+    expect(item.updatedAt).toBe('2026-03-04T00:00:00Z');
   });
 });
 
@@ -188,6 +190,21 @@ test.describe('notifications ticker rendering', () => {
 
     await expect(page.locator('#notifSection')).toBeVisible();
     await expect(page.locator('#notifRow .feed-chip')).toHaveCount(6); // 3 items x 2
+  });
+
+  test('shows a relative-time timestamp in each chip, like the activity feed does', async ({ page }) => {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60000).toISOString();
+    await page.evaluate((updatedAt) => {
+      S.showNotifs = true;
+      S.pat = 'fake-pat';
+      S.notifItems = [{
+        id: '1', icon: '<svg></svg>', repoName: 'Smokey', title: 'Fix the thing',
+        url: 'https://github.com/ScottKirvan/Smokey/issues/7', updatedAt,
+      }];
+      renderNotifFeed();
+    }, fiveMinAgo);
+
+    await expect(page.locator('#notifRow .feed-chip').first()).toContainText('m ago');
   });
 
   test('shows every unread notification, not just the first 5', async ({ page }) => {

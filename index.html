@@ -176,7 +176,7 @@ tbody td:first-child { padding-left: 13px; }
 }
 .repo-link:hover { color: var(--accent); }
 .repo-owner { font-weight: 400; color: var(--text-dim); }
-.lock-icon { vertical-align: -1px; margin-right: 3px; color: var(--text-dim); flex-shrink: 0; }
+.lock-icon { vertical-align: -1px; margin-right: 3px; color: var(--text-muted); flex-shrink: 0; }
 .repo-ver {
   font-family: 'JetBrains Mono', monospace; font-size: 10px;
   color: var(--text); margin-top: 1px; letter-spacing: -0.01em;
@@ -788,7 +788,7 @@ function rowHTML(d) {
   </tr>`;
 }
 
-const LOCK_ICON = '<svg class="lock-icon" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6" rx="1"/><path d="M5.5 7V4.75a2.5 2.5 0 015 0V7"/></svg>';
+const LOCK_ICON = '<svg class="lock-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6" rx="1"/><path d="M5.5 7V4.75a2.5 2.5 0 015 0V7"/></svg>';
 
 function repoLabel(fullName) {
   const [owner, name] = fullName.split('/');
@@ -851,7 +851,7 @@ function updateSummary(data) {
   const attn   = valid.filter(d => d.external_prs>0 || d.external_issues>0).length;
   const attnStr= attn > 0 ? ` · ${attn} need attention` : '';
   const modeStr= S.pat ? '' : ' · no PAT (public repos only)';
-  const timeStr= S.loadedAt ? ` · updated ${relTimeStr(S.loadedAt.toISOString())}` : '';
+  const timeStr= S.loadedAt ? ` · ${relTimeStr(S.loadedAt.toISOString())}` : '';
   document.getElementById('summaryBar').textContent =
     `${data.length} repos · ${prs} open PRs · ${issues} open issues${attnStr}${modeStr}${timeStr}`;
 }
@@ -1146,11 +1146,12 @@ function notifUrl(n) {
 function mapNotification(n) {
   const fullName = n.repository?.full_name || '';
   return {
-    id:       n.id,
-    repoName: fullName.split('/')[1] || fullName,
-    icon:     notifIcon(n.subject?.type),
-    title:    n.subject?.title || '',
-    url:      notifUrl(n),
+    id:        n.id,
+    repoName:  fullName.split('/')[1] || fullName,
+    icon:      notifIcon(n.subject?.type),
+    title:     n.subject?.title || '',
+    url:       notifUrl(n),
+    updatedAt: n.updated_at,
   };
 }
 
@@ -1193,7 +1194,7 @@ function renderNotifFeed() {
   function chipsHTML() {
     return toShow.map((item, idx) => {
       const sep = idx < toShow.length - 1 ? '<span class="feed-sep">·</span>' : '';
-      return `<a class="feed-chip" href="${esc(item.url)}" target="_blank" rel="noopener">${item.icon} ${esc(item.repoName)}: ${esc(item.title)}</a>${sep}`;
+      return `<a class="feed-chip" href="${esc(item.url)}" target="_blank" rel="noopener">${item.icon} ${esc(item.repoName)}: ${esc(item.title)} · ${relTimeStr(item.updatedAt)}</a>${sep}`;
     }).join('');
   }
 
