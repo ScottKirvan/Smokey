@@ -4,10 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+    paths-ignore:
+      - 'notes/CHANGELOG.md'
+      - 'notes/VERSION.md'
+      - '.github/release-please/**'
 
 jobs:
   playwright:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
