@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/ScottKirvan/Smokey/compare/v0.2.0...v0.3.0) (2026-09-10)
+
+
+### Features
+
+* add full-range traffic history, fed by the traffic-log branch ([6e5ad8a](https://github.com/ScottKirvan/Smokey/commit/6e5ad8a2e416625e934ef3cc945a3210e6109712))
+* add private-repo lock icon and unread notifications ticker ([8d282cc](https://github.com/ScottKirvan/Smokey/commit/8d282cc41edf0351a18fdfaddf2b2c89adb9c8b7))
+* add weekly traffic logging workflow ([4269329](https://github.com/ScottKirvan/Smokey/commit/426932946b85eee562c47110496cf1ccfae3c6a4))
+* show all unread notifications, link ALERTS label to GitHub inbox ([48314a0](https://github.com/ScottKirvan/Smokey/commit/48314a053d6ec0b33e1284954540966d6247b503))
+
+
+### Bug Fixes
+
+* brighten/enlarge lock icon, add timestamps to alert chips ([18c7d02](https://github.com/ScottKirvan/Smokey/commit/18c7d0283b83431bde8a5ad3d732017919b939b2))
+* CI status and traffic chart silently dropping renamed repos ([283b12d](https://github.com/ScottKirvan/Smokey/commit/283b12df49d35309d5b4214213d2cc0a8879cbe7))
+* replace 14-day traffic chart with full-history chart ([3f5fece](https://github.com/ScottKirvan/Smokey/commit/3f5fece8ac084c09b51977b503b0c31d98528b8a))
+* skip Playwright tests on release-please PRs ([43cd025](https://github.com/ScottKirvan/Smokey/commit/43cd0254dd9098bec99bd982a057c30de1dd4a4e))
+* suppress test workflow on release-please PRs via paths-ignore ([0b7ff28](https://github.com/ScottKirvan/Smokey/commit/0b7ff28a30d541d6ecbdbb06a9949ef7fbfdda68))
+
 ## [0.2.0](https://github.com/ScottKirvan/Smokey/compare/v0.1.0...v0.2.0) (2026-09-07)
 
 
