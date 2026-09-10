@@ -48,8 +48,8 @@
 ## Features
 
 - **No auth required for public repos** — loads real data from the GitHub API immediately, no login, no setup
-- **PAT optional** — add a GitHub personal access token in Settings to unlock traffic data (views/clones) and private repos; also required once you exceed ~15 public repos (unauthenticated API limit is 60 requests/hour, 4 per repo)
-- **Traffic chart** — 14-day area chart with logarithmic time axis (recent days expanded) and square-root value scale
+- **PAT optional** — add a GitHub personal access token in Settings to unlock private repos and CI status; also required once you exceed ~15 public repos (unauthenticated API limit is 60 requests/hour, 4 per repo)
+- **Traffic chart** — full history (not just GitHub's 14-day API window), area chart with logarithmic time axis (recent days expanded) and square-root value scale. No PAT needed — reads a daily snapshot from the `traffic-log` branch, accumulated by a separate weekly GitHub Actions workflow, instead of GitHub's live traffic API.
 - **Attention badges** — one row for open PRs, one row for open Issues; only repos with external contributor activity appear; each badge links to the filtered GitHub page
 - **Sortable table** — click any column header (Repo, Last Push, PRs, Issues) to sort; default is oldest push first
 - **Version + release date** — shown under repo name so you can track what shipped and when
@@ -87,14 +87,16 @@ A personal access token is optional for public repos but recommended if you have
 **When you need a PAT:**
 - More than ~15 public repos in your list
 - Any private repos
-- Traffic data (views/clones chart) — requires push access to each repo
+- CI status column
 - Org repos protected by SAML SSO — the PAT must be authorized for that org
+
+Traffic data doesn't need a PAT at all — it reads a daily snapshot from the `traffic-log` branch (a separate weekly GitHub Actions workflow), not GitHub's live traffic API.
 
 **Creating a PAT:**
 
 *Classic PAT* (simpler): [github.com/settings/tokens](https://github.com/settings/tokens) → Generate new token (classic) → select `repo` scope.
 
-*Fine-grained PAT* (more secure): [github.com/settings/tokens](https://github.com/settings/tokens) → Generate new token (fine-grained) → select repositories → grant **Contents: Read**, **Metadata: Read**, and **Administration: Read** (needed for traffic).
+*Fine-grained PAT* (more secure): [github.com/settings/tokens](https://github.com/settings/tokens) → Generate new token (fine-grained) → select repositories → grant **Contents: Read**, **Metadata: Read**, and **Actions: Read** (needed for CI status).
 
 The PAT is stored only in your browser's `localStorage` and is sent only to `api.github.com`. It is never transmitted anywhere else.
 
@@ -103,8 +105,8 @@ The PAT is stored only in your browser's `localStorage` and is sent only to `api
 **"Add a GitHub PAT in Settings" message shows even after adding a PAT**  
 Hard-refresh the page (Ctrl+Shift+R / Cmd+Shift+R). The browser may be serving a cached version of the dashboard. If the message persists after a hard refresh, re-open Settings and confirm the PAT field is still populated — `localStorage` is cleared in private/incognito windows.
 
-**Traffic chart is flat at zero after adding a PAT**  
-The PAT doesn't have access to the traffic API. For a classic PAT, `repo` scope is required. For a fine-grained PAT, `Administration: Read` is the permission that unlocks traffic (not `Contents: Read`). If the scope is correct but the chart is still flat, the repos genuinely may have no recorded traffic — GitHub only starts logging once a repo receives its first external view.
+**Traffic chart shows "No traffic history yet."**  
+The chart reads a daily snapshot from the `traffic-log` branch, built by a separate weekly GitHub Actions workflow (`log-traffic.yml`). That branch/file may not exist yet, or your monitored repos may not have any rows logged yet — check whether `log-traffic.yml` has run at least once since the repos were added.
 
 **Some repos show 403**  
 Without a PAT the GitHub API allows 60 requests/hour. Each repo fetches 4 endpoints, so more than ~15 repos will hit the limit. Adding any PAT raises the limit to 5,000/hour. Org repos with SAML SSO also require the PAT to be explicitly authorized for that org in [GitHub token settings](https://github.com/settings/tokens).
