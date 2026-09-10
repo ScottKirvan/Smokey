@@ -284,6 +284,8 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   padding: 0 8px; flex-shrink: 0; border-right: 1px solid var(--border-subtle);
   line-height: 28px;
 }
+a.feed-label { text-decoration: none; }
+a.feed-label:hover { color: var(--text-muted); }
 .feed-row {
   display: flex; align-items: center; overflow: hidden;
   flex: 1; gap: 0;
@@ -353,7 +355,7 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 </section>
 
 <section id="notifSection" style="display:none">
-  <span class="feed-label">ALERTS</span>
+  <a class="feed-label" href="https://github.com/notifications" target="_blank" rel="noopener">ALERTS</a>
   <div class="feed-row" id="notifRow"></div>
 </section>
 
@@ -1160,13 +1162,16 @@ async function pollNotifications() {
   };
   if (S.notifLastModified) headers['If-Modified-Since'] = S.notifLastModified;
   try {
-    const r = await fetch('https://api.github.com/notifications', { headers });
+    // per_page=100 is GitHub's max for this endpoint; not paginated further
+    // (matches the per_page=100, no-pagination approach fetchRepo() already
+    // uses for pulls/issues) — covers unread counts well past normal use.
+    const r = await fetch('https://api.github.com/notifications?per_page=100', { headers });
     captureRateLimit(r);
     if (r.status === 304) return;
     if (!r.ok) return;
     S.notifLastModified = r.headers.get('Last-Modified') || S.notifLastModified;
     const threads = await r.json();
-    S.notifItems = threads.map(mapNotification).slice(0, 10);
+    S.notifItems = threads.map(mapNotification);
     renderNotifFeed();
   } catch(e) {
     console.error('Notifications poll error:', e);
@@ -1182,7 +1187,7 @@ function renderNotifFeed() {
   }
   section.style.display = '';
 
-  const toShow = S.notifItems.slice(0, 5);
+  const toShow = S.notifItems;
   const dur = Math.max(15, toShow.length * 6);
 
   function chipsHTML() {

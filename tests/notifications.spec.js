@@ -71,16 +71,18 @@ test.describe('pollNotifications', () => {
     await page.goto('/index.html');
   });
 
-  test('fetches unread notifications and renders them', async ({ page }) => {
-    const notifItems = await page.evaluate(async () => {
+  test('fetches unread notifications with per_page=100 and renders them', async ({ page }) => {
+    const result = await page.evaluate(async () => {
       S.pat = 'fake-pat';
       S.showNotifs = true;
       S.notifItems = [];
       S.notifLastModified = '';
+      let requestedUrl = null;
 
       const realFetch = window.fetch;
       window.fetch = async (url) => {
-        if (String(url) === 'https://api.github.com/notifications') {
+        requestedUrl = String(url);
+        if (requestedUrl === 'https://api.github.com/notifications?per_page=100') {
           return {
             ok: true, status: 200,
             headers: { get: (k) => k === 'Last-Modified' ? 'Wed, 01 Jan 2026 00:00:00 GMT' : null },
@@ -99,11 +101,35 @@ test.describe('pollNotifications', () => {
       } finally {
         window.fetch = realFetch;
       }
+      return { requestedUrl, notifItems: S.notifItems };
+    });
+
+    expect(result.requestedUrl).toBe('https://api.github.com/notifications?per_page=100');
+    expect(result.notifItems).toHaveLength(1);
+    expect(result.notifItems[0].repoName).toBe('Smokey');
+  });
+
+  test('keeps every unread notification the poll returns, not just the first 10', async ({ page }) => {
+    const notifItems = await page.evaluate(async () => {
+      S.pat = 'fake-pat';
+      S.notifItems = [];
+      S.notifLastModified = '';
+
+      window.fetch = async () => ({
+        ok: true, status: 200,
+        headers: { get: () => null },
+        json: async () => Array.from({ length: 12 }, (_, i) => ({
+          id: String(i),
+          repository: { full_name: 'ScottKirvan/Smokey', html_url: 'https://github.com/ScottKirvan/Smokey' },
+          subject: { title: `item ${i}`, type: 'Issue', url: `https://api.github.com/repos/ScottKirvan/Smokey/issues/${i}` },
+          updated_at: '2026-01-01T00:00:00Z',
+        })),
+      });
+      await pollNotifications();
       return S.notifItems;
     });
 
-    expect(notifItems).toHaveLength(1);
-    expect(notifItems[0].repoName).toBe('Smokey');
+    expect(notifItems).toHaveLength(12);
   });
 
   test('does nothing on a 304 (nothing changed since the last poll)', async ({ page }) => {
@@ -162,5 +188,28 @@ test.describe('notifications ticker rendering', () => {
 
     await expect(page.locator('#notifSection')).toBeVisible();
     await expect(page.locator('#notifRow .feed-chip')).toHaveCount(6); // 3 items x 2
+  });
+
+  test('shows every unread notification, not just the first 5', async ({ page }) => {
+    const items = Array.from({ length: 8 }, (_, i) => ({
+      id: String(i),
+      icon: '<svg></svg>',
+      repoName: 'Smokey',
+      title: `item ${i}`,
+      url: 'https://github.com/ScottKirvan/Smokey/issues/1',
+    }));
+    await page.evaluate((items) => {
+      S.showNotifs = true;
+      S.pat = 'fake-pat';
+      S.notifItems = items;
+      renderNotifFeed();
+    }, items);
+
+    await expect(page.locator('#notifRow .feed-chip')).toHaveCount(16); // 8 items x 2
+  });
+
+  test('the ALERTS label links to the GitHub notifications inbox', async ({ page }) => {
+    const href = await page.locator('#notifSection a.feed-label').getAttribute('href');
+    expect(href).toBe('https://github.com/notifications');
   });
 });
