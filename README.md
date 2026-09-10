@@ -50,6 +50,8 @@
 - **No auth required for public repos** — loads real data from the GitHub API immediately, no login, no setup
 - **PAT optional** — add a GitHub personal access token in Settings to unlock private repos and CI status; also required once you exceed ~15 public repos (unauthenticated API limit is 60 requests/hour, 4 per repo)
 - **Traffic chart** — full history (not just GitHub's 14-day API window), area chart with logarithmic time axis (recent days expanded) and square-root value scale. No PAT needed — reads a daily snapshot from the `traffic-log` branch, accumulated by a separate weekly GitHub Actions workflow, instead of GitHub's live traffic API.
+- **Private repo indicator** — a lock icon next to the name of any private repo in the table
+- **Notifications ticker** — an opt-in scrolling strip of your unread GitHub notifications, separate from the activity feed; see **GitHub PAT** below for the scope it needs
 - **Attention badges** — one row for open PRs, one row for open Issues; only repos with external contributor activity appear; each badge links to the filtered GitHub page
 - **Sortable table** — click any column header (Repo, Last Push, PRs, Issues) to sort; default is oldest push first
 - **Version + release date** — shown under repo name so you can track what shipped and when
@@ -89,6 +91,7 @@ A personal access token is optional for public repos but recommended if you have
 - Any private repos
 - CI status column
 - Org repos protected by SAML SSO — the PAT must be authorized for that org
+- Notifications ticker — needs a **classic** PAT with the `notifications` or `repo` scope; fine-grained PATs can't call GitHub's notifications API at all
 
 Traffic data doesn't need a PAT at all — it reads a daily snapshot from the `traffic-log` branch (a separate weekly GitHub Actions workflow), not GitHub's live traffic API.
 

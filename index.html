@@ -176,6 +176,7 @@ tbody td:first-child { padding-left: 13px; }
 }
 .repo-link:hover { color: var(--accent); }
 .repo-owner { font-weight: 400; color: var(--text-dim); }
+.lock-icon { vertical-align: -1px; margin-right: 3px; color: var(--text-dim); flex-shrink: 0; }
 .repo-ver {
   font-family: 'JetBrains Mono', monospace; font-size: 10px;
   color: var(--text); margin-top: 1px; letter-spacing: -0.01em;
@@ -273,7 +274,7 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .save-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── Feed strip ── */
-#feedSection {
+#feedSection, #notifSection {
   background: var(--surface); border-bottom: 1px solid var(--border);
   height: 28px; display: flex; align-items: center; overflow: hidden;
 }
@@ -351,6 +352,11 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   <div class="feed-row" id="feedRow"></div>
 </section>
 
+<section id="notifSection" style="display:none">
+  <span class="feed-label">ALERTS</span>
+  <div class="feed-row" id="notifRow"></div>
+</section>
+
 <section class="attn-section" id="attnSection" hidden>
   <div class="attn-row">
     <svg class="attn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -413,6 +419,10 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
       <input type="checkbox" id="showFeedToggle">
       <span class="toggle-label">Show activity feed (requires PAT)</span>
     </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="showNotifsToggle">
+      <span class="toggle-label">Show unread notifications (requires classic PAT with notifications scope)</span>
+    </label>
     <button class="save-btn" onclick="saveConfig()">Save &amp; Refresh</button>
   </div>
 </div>
@@ -430,6 +440,7 @@ const S = {
   sortBy: 'commit', sortDir: 'asc',   // oldest first by default
   data: [], loadedAt: null,
   showFeed: false, feedItems: [], feedEtag: '', feedPollTimer: null,
+  showNotifs: false, notifItems: [], notifLastModified: '', notifPollTimer: null,
   rateLimit: null,
 };
 
@@ -441,6 +452,7 @@ function init() {
                   .split('\n').map(s => s.trim()).filter(Boolean);
     S.showOrg  = localStorage.getItem('rw_show_org') === '1';
     S.showFeed = localStorage.getItem('rw_feed') === '1';
+    S.showNotifs = localStorage.getItem('rw_notifs') === '1';
     const savedSortBy = localStorage.getItem('rw_sort_by');
     if (COLS.includes(savedSortBy)) S.sortBy = savedSortBy;
     const savedSortDir = localStorage.getItem('rw_sort_dir');
@@ -490,6 +502,7 @@ async function load() {
       console.error('PAT-gated fetch failed:', e);
     }
     if (S.showFeed && S.currentUser) startFeedPoll();
+    if (S.showNotifs) startNotifPoll();
   }
 
   setPip('live');
@@ -543,7 +556,7 @@ async function fetchRepo(fullName, headers) {
     const extPRs  = prs.filter(p => p.user?.login !== me && !isBot(p.user));
     const extI    = issues.filter(i => i.user?.login !== me && !isBot(i.user));
     return {
-      full_name: repo.full_name, pushed_at: repo.pushed_at,
+      full_name: repo.full_name, pushed_at: repo.pushed_at, private: repo.private,
       latest_release: release?.tag_name ? release : null,
       open_prs: prs.length, external_prs: extPRs.length,
       open_issues: issues.length, external_issues: extI.length,
@@ -763,7 +776,7 @@ function rowHTML(d) {
 
   return `<tr class="${hasExt ? 'has-ext' : ''}">
     <td>
-      <a class="repo-link" href="https://github.com/${d.full_name}" target="_blank" rel="noopener">${esc(repoLabel(d.full_name))}</a>
+      <a class="repo-link" href="https://github.com/${d.full_name}" target="_blank" rel="noopener">${d.private ? LOCK_ICON : ''}${esc(repoLabel(d.full_name))}</a>
       <div class="repo-ver">${ver}</div>
     </td>
     <td><span class="time-val ${timeClass(d.pushed_at)}">${relTimeStr(d.pushed_at)}</span></td>
@@ -772,6 +785,8 @@ function rowHTML(d) {
     ${ciCellHTML(d)}
   </tr>`;
 }
+
+const LOCK_ICON = '<svg class="lock-icon" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6" rx="1"/><path d="M5.5 7V4.75a2.5 2.5 0 015 0V7"/></svg>';
 
 function repoLabel(fullName) {
   const [owner, name] = fullName.split('/');
@@ -859,6 +874,7 @@ function openConfig() {
   document.getElementById('reposInput').value      = S.repos.join('\n');
   document.getElementById('showOrgToggle').checked  = S.showOrg;
   document.getElementById('showFeedToggle').checked = S.showFeed;
+  document.getElementById('showNotifsToggle').checked = S.showNotifs;
   document.getElementById('configOverlay').classList.add('open');
 }
 function closeConfig() { document.getElementById('configOverlay').classList.remove('open'); }
@@ -868,15 +884,19 @@ function saveConfig() {
   const newRepos = document.getElementById('reposInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
   const showOrg  = document.getElementById('showOrgToggle').checked;
   const showFeed = document.getElementById('showFeedToggle').checked;
+  const showNotifs = document.getElementById('showNotifsToggle').checked;
   try {
     localStorage.setItem('rw_pat',      newPat);
     localStorage.setItem('rw_repos',    newRepos.join('\n'));
     localStorage.setItem('rw_show_org', showOrg  ? '1' : '0');
     localStorage.setItem('rw_feed',     showFeed ? '1' : '0');
+    localStorage.setItem('rw_notifs',   showNotifs ? '1' : '0');
   } catch(e) {}
-  stopFeedPoll(); // always clear before potentially re-starting
+  stopFeedPoll();  // always clear before potentially re-starting
+  stopNotifPoll();
   if (!showFeed) document.getElementById('feedSection').style.display = 'none';
-  S.pat = newPat; S.repos = newRepos; S.showOrg = showOrg; S.showFeed = showFeed;
+  if (!showNotifs) document.getElementById('notifSection').style.display = 'none';
+  S.pat = newPat; S.repos = newRepos; S.showOrg = showOrg; S.showFeed = showFeed; S.showNotifs = showNotifs;
   S.currentUser = ''; S.data = [];
   closeConfig();
   load();
@@ -1069,6 +1089,109 @@ function renderFeed() {
   }
 
   // Double the chip set for a seamless loop: animate translateX(0 → -50%)
+  row.innerHTML = `<div class="feed-inner" style="animation-duration:${dur}s">${chipsHTML()}<span class="feed-sep" style="padding:0 8px">·</span>${chipsHTML()}</div>`;
+}
+
+// ── Notifications ─────────────────────────────────────
+// GitHub's notification inbox, unlike the activity feed above, isn't
+// scoped to monitored repos — GET /notifications returns the account's
+// unread threads across everything. Only classic PATs can call this
+// endpoint (fine-grained PATs are unsupported per GitHub's docs), with
+// `notifications` or `repo` scope.
+function startNotifPoll() {
+  if (!S.showNotifs || !S.pat) return;
+  if (S.notifPollTimer) return; // guard against double-starting
+  pollNotifications();
+  S.notifPollTimer = setInterval(pollNotifications, 60000);
+}
+
+function stopNotifPoll() {
+  if (S.notifPollTimer) { clearInterval(S.notifPollTimer); S.notifPollTimer = null; }
+  S.notifLastModified = '';
+  S.notifItems = [];
+}
+
+const NOTIF_ICONS = {
+  Issue:       'M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 5v4M8 10.5v.5',
+  PullRequest: 'M4 3v5a2 2 0 004 0V3M4 13h8',
+  Commit:      'M8 1v10M4 7l4 4 4-4',
+  Release:     'M2 2h6l6 6-6 6-6-6V2z M5 5h.01',
+  Discussion:  'M2 2h12v9H6l-3 3V2z',
+  _default:    'M8 8a2 2 0 100-4 2 2 0 000 4z',
+};
+
+function notifIcon(type) {
+  const d = NOTIF_ICONS[type] || NOTIF_ICONS._default;
+  return `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+}
+
+// subject.url is an API url (e.g. .../repos/o/r/issues/12); GitHub gives no
+// ready web link for a notification, so translate the common subject types
+// by hand. Pull requests and commits need a singular path segment swapped
+// in; anything else (Release, Discussion, CheckSuite, ...) falls back to
+// the repo's own page since there's no reliable API-url → web-url mapping.
+function notifUrl(n) {
+  const apiUrl = n.subject?.url || '';
+  const type   = n.subject?.type || '';
+  const webUrl = apiUrl.replace('https://api.github.com/repos/', 'https://github.com/');
+  if (webUrl === apiUrl) return n.repository?.html_url || '#';
+  if (type === 'PullRequest') return webUrl.replace('/pulls/', '/pull/');
+  if (type === 'Commit')      return webUrl.replace('/commits/', '/commit/');
+  if (type === 'Issue')       return webUrl;
+  return n.repository?.html_url || '#';
+}
+
+function mapNotification(n) {
+  const fullName = n.repository?.full_name || '';
+  return {
+    id:       n.id,
+    repoName: fullName.split('/')[1] || fullName,
+    icon:     notifIcon(n.subject?.type),
+    title:    n.subject?.title || '',
+    url:      notifUrl(n),
+  };
+}
+
+async function pollNotifications() {
+  if (!S.pat) return;
+  const headers = {
+    Authorization: `token ${S.pat}`,
+    Accept: 'application/vnd.github.v3+json',
+  };
+  if (S.notifLastModified) headers['If-Modified-Since'] = S.notifLastModified;
+  try {
+    const r = await fetch('https://api.github.com/notifications', { headers });
+    captureRateLimit(r);
+    if (r.status === 304) return;
+    if (!r.ok) return;
+    S.notifLastModified = r.headers.get('Last-Modified') || S.notifLastModified;
+    const threads = await r.json();
+    S.notifItems = threads.map(mapNotification).slice(0, 10);
+    renderNotifFeed();
+  } catch(e) {
+    console.error('Notifications poll error:', e);
+  }
+}
+
+function renderNotifFeed() {
+  const section = document.getElementById('notifSection');
+  const row     = document.getElementById('notifRow');
+  if (!S.showNotifs || !S.pat || S.notifItems.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+
+  const toShow = S.notifItems.slice(0, 5);
+  const dur = Math.max(15, toShow.length * 6);
+
+  function chipsHTML() {
+    return toShow.map((item, idx) => {
+      const sep = idx < toShow.length - 1 ? '<span class="feed-sep">·</span>' : '';
+      return `<a class="feed-chip" href="${esc(item.url)}" target="_blank" rel="noopener">${item.icon} ${esc(item.repoName)}: ${esc(item.title)}</a>${sep}`;
+    }).join('');
+  }
+
   row.innerHTML = `<div class="feed-inner" style="animation-duration:${dur}s">${chipsHTML()}<span class="feed-sep" style="padding:0 8px">·</span>${chipsHTML()}</div>`;
 }
 
