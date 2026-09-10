@@ -106,6 +106,15 @@ header {
 .x-labels span:first-child { transform: none; }
 .x-labels span:last-child { transform: translateX(-100%); }
 
+.history-toggle {
+  display: block; width: 100%; text-align: center; background: none; border: none;
+  border-top: 1px solid var(--border-subtle); padding: 6px 0; margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.04em;
+  color: var(--text-dim); cursor: pointer;
+}
+.history-toggle:hover { color: var(--text-muted); }
+.history-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 /* ── Attention badges ── */
 .attn-section {
   border-bottom: 1px solid var(--border);
@@ -351,6 +360,22 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
       <span style="left:73.8%">1d</span>
       <span style="right:0">yest</span>
     </div>
+  </div>
+  <button class="history-toggle" id="historyToggle" onclick="toggleTrafficHistory()">Show full history ▾</button>
+  <div class="chart-wrap" id="historyChartWrap" hidden>
+    <div class="traffic-header">
+      <span class="traffic-label">History</span>
+      <span class="traffic-total" id="historyTotal"></span>
+    </div>
+    <div class="chart-no-pat" id="historyEmpty">Loading history…</div>
+    <svg id="historyChartSvg" viewBox="0 0 1000 65" preserveAspectRatio="none" style="display:none">
+      <path id="historyChartArea" fill="#2f81f7" fill-opacity="0.12"/>
+      <path id="historyChartLine" fill="none" stroke="#2f81f7" stroke-width="1.5" stroke-linejoin="round"/>
+      <path id="historyChartUniq" fill="none" stroke="#2f81f7" stroke-width="1" stroke-linejoin="round" opacity="0.38"/>
+      <circle id="historyChartPeak" r="2.5" fill="#2f81f7"/>
+      <text id="historyChartPeakLbl" font-family="monospace" font-size="22" fill="#7d8590" opacity="0.65"/>
+    </svg>
+    <div class="x-labels" id="historyChartLabels" style="display:none"></div>
   </div>
 </section>
 
@@ -697,6 +722,112 @@ function renderChart(data) {
 
 function fmt(n) { return n >= 1000 ? `${(n/1000).toFixed(1)}k` : `${n}`; }
 
+// ── Traffic history (long-range, from the traffic-log branch) ─────────
+// The 14-day chart above is limited to what GitHub's live traffic API
+// returns. log-traffic.yml (a separate weekly workflow) accumulates a
+// daily CSV snapshot on the traffic-log branch instead, unbounded by
+// that 14-day window. This fetches that public file directly — no PAT
+// involved, so the security constraint ("PAT sent only to
+// api.github.com") isn't touched by this at all.
+const TRAFFIC_LOG_URL = 'https://raw.githubusercontent.com/ScottKirvan/Smokey/traffic-log/views.csv';
+let _historyLoaded = false;
+
+function parseTrafficCsv(text) {
+  return text.trim().split('\n').slice(1).filter(Boolean).map(line => {
+    const [repo, date, views, uniques] = line.split(',');
+    return { repo, date, views: +views, uniques: +uniques };
+  });
+}
+
+function aggregateTrafficHistory(rows) {
+  const byDate = {};
+  rows.forEach(r => {
+    if (!byDate[r.date]) byDate[r.date] = { views: 0, uniques: 0 };
+    byDate[r.date].views += r.views;
+    byDate[r.date].uniques += r.uniques;
+  });
+  return Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
+    .map(([date, {views, uniques}]) => ({ date, views, uniques }));
+}
+
+function renderHistoryChart(data) {
+  const empty = document.getElementById('historyEmpty');
+  const svg   = document.getElementById('historyChartSvg');
+  const lbls  = document.getElementById('historyChartLabels');
+
+  if (!data || data.length === 0) {
+    empty.textContent = 'No history data for your monitored repos yet.';
+    empty.style.display = ''; svg.style.display = 'none'; lbls.style.display = 'none';
+    return;
+  }
+
+  empty.style.display = 'none'; svg.style.display = 'block'; lbls.style.display = '';
+
+  const W = 1000, H = 65, PAD_TOP = 6;
+  const CH = H - PAD_TOP;
+  const n  = data.length;
+  const maxV = Math.max(...data.map(d => d.views), 1);
+
+  // Linear x-axis (unlike the 14-day chart's log scale, which exists
+  // specifically to expand recent-day resolution) — appropriate for a
+  // range that spans weeks/months and keeps growing.
+  function xc(i) { return n === 1 ? W : Math.round((i / (n-1)) * W); }
+  function yc(v) { return PAD_TOP + CH - Math.sqrt(v/maxV) * CH; }
+
+  const pts  = data.map((d,i) => [xc(i), yc(d.views)]);
+  const upts = data.map((d,i) => [xc(i), yc(d.uniques)]);
+
+  const areaD  = `M${pts[0][0]},${H} ` + pts.map(([x,y]) => `L${x},${y}`).join(' ') + ` L${pts[n-1][0]},${H}Z`;
+  const lineD  = `M${pts[0].join(',')}` + pts.slice(1).map(([x,y]) => `L${x},${y}`).join('');
+  const ulineD = `M${upts[0].join(',')}` + upts.slice(1).map(([x,y]) => `L${x},${y}`).join('');
+
+  const maxI = data.reduce((mi,d,i) => d.views>data[mi].views ? i : mi, 0);
+  const [px, py] = pts[maxI];
+  const totV = data.reduce((s,d) => s+d.views, 0);
+  const totU = data.reduce((s,d) => s+d.uniques, 0);
+
+  document.getElementById('historyTotal').textContent = `${fmt(totV)} views · ${fmt(totU)} unique · ${n} days`;
+
+  document.getElementById('historyChartArea').setAttribute('d', areaD);
+  document.getElementById('historyChartLine').setAttribute('d', lineD);
+  document.getElementById('historyChartUniq').setAttribute('d', ulineD);
+  const peak = document.getElementById('historyChartPeak');
+  peak.setAttribute('cx', px); peak.setAttribute('cy', py);
+  const lbl = document.getElementById('historyChartPeakLbl');
+  lbl.setAttribute('x', Math.min(px+6, W-80));
+  lbl.setAttribute('y', Math.max(py-4, 16));
+  lbl.textContent = fmt(maxV);
+
+  lbls.innerHTML = `<span style="left:0">${data[0].date}</span><span style="right:0">${data[n-1].date}</span>`;
+}
+
+async function loadTrafficHistory() {
+  const empty = document.getElementById('historyEmpty');
+  empty.textContent = 'Loading history…';
+  empty.style.display = '';
+  document.getElementById('historyChartSvg').style.display = 'none';
+  document.getElementById('historyChartLabels').style.display = 'none';
+  try {
+    const r = await fetch(TRAFFIC_LOG_URL);
+    if (!r.ok) { empty.textContent = 'No history data found yet.'; return; }
+    const rows = parseTrafficCsv(await r.text());
+    const monitored = rows.filter(row => S.repos.includes(row.repo));
+    _historyLoaded = true;
+    renderHistoryChart(aggregateTrafficHistory(monitored));
+  } catch(e) {
+    empty.textContent = 'Failed to load history.';
+  }
+}
+
+function toggleTrafficHistory() {
+  const wrap = document.getElementById('historyChartWrap');
+  const btn  = document.getElementById('historyToggle');
+  const opening = wrap.hidden;
+  wrap.hidden = !opening;
+  btn.textContent = opening ? 'Hide full history ▴' : 'Show full history ▾';
+  if (opening && !_historyLoaded) loadTrafficHistory();
+}
+
 // ── Badges ────────────────────────────────────────────
 function renderBadges(data) {
   const valid  = data.filter(d => !d.error);
@@ -863,6 +994,8 @@ function saveConfig() {
   if (!showFeed) document.getElementById('feedSection').style.display = 'none';
   S.pat = newPat; S.repos = newRepos; S.showOrg = showOrg; S.showFeed = showFeed;
   S.currentUser = ''; S.data = [];
+  _historyLoaded = false; // repo list changed — the cached filter is stale
+  if (!document.getElementById('historyChartWrap').hidden) loadTrafficHistory();
   closeConfig();
   load();
 }
