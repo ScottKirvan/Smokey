@@ -484,22 +484,25 @@ async function load() {
     } catch(e) {}
   }
 
-  // Fetch repo data + traffic history (traffic needs no PAT — public CSV)
-  const [results] = await Promise.all([
-    Promise.all(S.repos.map(r => fetchRepo(r, headers))),
-    loadTraffic(),
-  ]);
-  S.data = results;
+  // Fetch repo data first — loadTraffic() and the CI merge below both need
+  // the canonical full_name GitHub resolved, which can differ from the raw
+  // string in S.repos if a repo was renamed after being added to Settings
+  // (GitHub redirects the old name transparently, so the fetch still
+  // succeeds, but a stale name no longer matches d.full_name for matching).
+  S.data = await Promise.all(S.repos.map(r => fetchRepo(r, headers)));
   S.loadedAt = new Date();
+
+  await loadTraffic(); // no PAT needed — public CSV
 
   // Fetch PAT-gated data: CI status
   if (S.pat) {
     try {
+      // fetchWorkflowRuns() is called via the same S.repos.map() that
+      // produced S.data above, so ciArr and S.data are already index-
+      // aligned — no need to re-match by name (which would silently drop
+      // CI status for a renamed repo, same as the loadTraffic() bug above).
       const ciArr = await Promise.all(S.repos.map(r => fetchWorkflowRuns(r, headers)));
-      S.repos.forEach((name, i) => {
-        const d = S.data.find(r => r.full_name === name);
-        if (d) d.ci = ciArr[i];
-      });
+      S.data.forEach((d, i) => { d.ci = ciArr[i]; });
     } catch(e) {
       console.error('PAT-gated fetch failed:', e);
     }
@@ -720,7 +723,12 @@ async function loadTraffic() {
     const r = await fetch(TRAFFIC_LOG_URL);
     if (!r.ok) { renderChart([]); return; }
     const rows = parseTrafficCsv(await r.text());
-    const monitored = rows.filter(row => S.repos.includes(row.repo));
+    // Match against the canonical full_name S.data resolved, not the raw
+    // S.repos strings — a renamed repo's Settings entry is stale and would
+    // otherwise silently drop that repo's traffic (same bug class as
+    // pollEvents(), see repo-rename-drift.spec.js).
+    const names = new Set(S.data.filter(d => !d.error).map(d => d.full_name));
+    const monitored = rows.filter(row => names.has(row.repo));
     renderChart(aggregateTrafficHistory(monitored));
   } catch(e) {
     renderChart([]);

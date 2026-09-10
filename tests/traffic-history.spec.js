@@ -112,7 +112,35 @@ test.describe('loadTraffic', () => {
     ].join('\n');
 
     await page.evaluate(async (csv) => {
-      S.repos = ['ScottKirvan/Smokey'];
+      S.data = [{ full_name: 'ScottKirvan/Smokey' }];
+      window.fetch = async (url) => {
+        if (String(url).includes('traffic-log/views.csv')) {
+          return { ok: true, text: async () => csv };
+        }
+        return { ok: false, status: 404 };
+      };
+      await loadTraffic();
+    }, csv);
+
+    await expect(page.locator('#chartSvg')).toBeVisible();
+    await expect(page.locator('#trafficTotal')).toHaveText('10 views · 3 unique');
+  });
+
+  // Regression test: loadTraffic() used to filter CSV rows against the raw
+  // S.repos config strings. A repo renamed after being added to Settings
+  // still redirects fine for fetchRepo() (GitHub resolves the canonical
+  // full_name), but the stale typed string no longer matches — so its
+  // traffic silently dropped out of the chart. See repo-rename-drift.spec.js
+  // for the same bug class in fetchRepo()/pollEvents().
+  test('still shows traffic for a repo whose Settings entry is a stale (renamed) name', async ({ page }) => {
+    const csv = [
+      'repo,date,views,unique_visitors',
+      'ScottKirvan/Smokey,2026-09-01,10,3',
+    ].join('\n');
+
+    await page.evaluate(async (csv) => {
+      S.repos = ['ScottKirvan/RepoWatch']; // stale — the repo was renamed on GitHub
+      S.data = [{ full_name: 'ScottKirvan/Smokey' }]; // resolved by fetchRepo()
       window.fetch = async (url) => {
         if (String(url).includes('traffic-log/views.csv')) {
           return { ok: true, text: async () => csv };
