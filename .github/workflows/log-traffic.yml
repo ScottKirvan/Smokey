@@ -1,0 +1,143 @@
+name: Log GitHub Traffic
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly, Monday 8am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  log-traffic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up traffic-log branch
+        run: |
+          git fetch origin traffic-log 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/traffic-log; then
+            git checkout traffic-log
+          else
+            git checkout --orphan traffic-log
+            git rm -rf . > /dev/null 2>&1 || true
+          fi
+
+      - name: Collect traffic data
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_PAT }}
+        run: |
+          python3 << 'PYEOF'
+          import subprocess, json, csv, os
+          from datetime import datetime, timezone
+
+          REPOS = [
+              "ScottKirvan/.github",
+              "ScottKirvan/BojuBot",
+              "ScottKirvan/QuKi-Notes",
+              "ScottKirvan/Obsidian-ScooterUtils",
+              "ScottKirvan/ObsidianQuickLaunch",
+              "ScottKirvan/ScooterUtils",
+              "ScottKirvan/ToolExample",
+              "ScottKirvan/UE_QuickLaunch",
+              "ScottKirvan/ReleasePleaseTest",
+              "ScottKirvan/ScooterGitTemplate",
+              "ScottKirvan/GitHubDHC",
+              "ScottKirvan/ScottKirvan",
+              "ScottKirvan/UE_StageHand",
+              "ScottKirvan/Pingd",
+              "ScottKirvan/GOMAC",
+              "ScottKirvan/BojuVue",
+              "ScottKirvan/Smokey",
+              "ScottKirvan/PosseRenkei",
+          ]
+
+          poll_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+          def gh_api(endpoint):
+              result = subprocess.run(
+                  ["gh", "api", endpoint],
+                  capture_output=True, text=True
+              )
+              if result.returncode != 0:
+                  print(f"    Skipped ({result.stderr.strip()[:80]})")
+                  return None
+              return json.loads(result.stdout)
+
+          def read_csv(path, header):
+              if not os.path.exists(path):
+                  return []
+              with open(path, newline="") as f:
+                  reader = csv.reader(f)
+                  next(reader, None)
+                  return list(reader)
+
+          def write_csv(path, header, rows):
+              with open(path, "w", newline="") as f:
+                  w = csv.writer(f)
+                  w.writerow(header)
+                  w.writerows(rows)
+
+          # ── Views (daily breakdown) ──────────────────────────────────────────
+          new_view_rows = []
+          for repo in REPOS:
+              print(f"  {repo}")
+              data = gh_api(f"repos/{repo}/traffic/views")
+              if not data:
+                  continue
+              for v in data.get("views", []):
+                  date = v["timestamp"].split("T")[0]
+                  new_view_rows.append([repo, date, str(v["count"]), str(v["uniques"])])
+
+          existing_views = read_csv("views.csv", None)
+          new_view_keys = {(r[0], r[1]) for r in new_view_rows}
+          kept_views = [r for r in existing_views if (r[0], r[1]) not in new_view_keys]
+          all_views = sorted(kept_views + new_view_rows, key=lambda r: (r[0], r[1]))
+          write_csv("views.csv", ["repo", "date", "views", "unique_visitors"], all_views)
+          print(f"\n  views.csv: {len(all_views)} records total")
+
+          # ── Referrers ────────────────────────────────────────────────────────
+          new_ref_rows = []
+          for repo in REPOS:
+              data = gh_api(f"repos/{repo}/traffic/referrers")
+              if not data:
+                  continue
+              for r in data:
+                  new_ref_rows.append([repo, poll_date, r["referrer"], str(r["count"]), str(r["uniques"])])
+
+          existing_refs = read_csv("referrers.csv", None)
+          new_ref_keys = {(r[0], r[1], r[2]) for r in new_ref_rows}
+          kept_refs = [r for r in existing_refs if (r[0], r[1], r[2]) not in new_ref_keys]
+          all_refs = sorted(kept_refs + new_ref_rows, key=lambda r: (r[0], r[1], r[2]))
+          write_csv("referrers.csv", ["repo", "polled_at", "referrer", "views", "unique_visitors"], all_refs)
+          print(f"  referrers.csv: {len(all_refs)} records total")
+
+          # ── Popular paths ─────────────────────────────────────────────────────
+          new_path_rows = []
+          for repo in REPOS:
+              data = gh_api(f"repos/{repo}/traffic/popular/paths")
+              if not data:
+                  continue
+              for p in data:
+                  new_path_rows.append([repo, poll_date, p["path"], p["title"], str(p["count"]), str(p["uniques"])])
+
+          existing_paths = read_csv("popular_paths.csv", None)
+          new_path_keys = {(r[0], r[1], r[2]) for r in new_path_rows}
+          kept_paths = [r for r in existing_paths if (r[0], r[1], r[2]) not in new_path_keys]
+          all_paths = sorted(kept_paths + new_path_rows, key=lambda r: (r[0], r[1], r[2]))
+          write_csv("popular_paths.csv", ["repo", "polled_at", "path", "title", "views", "unique_visitors"], all_paths)
+          print(f"  popular_paths.csv: {len(all_paths)} records total")
+          PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add views.csv referrers.csv popular_paths.csv
+          if git diff --staged --quiet; then
+            echo "No new traffic data."
+          else
+            git commit -m "chore: traffic snapshot $(date -u +%Y-%m-%d)"
+            git push origin traffic-log
+          fi
