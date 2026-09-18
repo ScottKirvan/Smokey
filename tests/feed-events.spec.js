@@ -105,6 +105,38 @@ test.describe('activity feed marquee rendering', () => {
     await expect(page.locator('.feed-chip')).toHaveCount(6); // 3 items x 2
   });
 
+  test('shows up to 10 items, not just 5', async ({ page }) => {
+    const items = Array.from({ length: 14 }, (_, i) => ({
+      id: String(i),
+      icon: '<svg></svg>',
+      repoName: 'Smokey',
+      verb: 'pushed 1 commit',
+      url: 'https://github.com/ScottKirvan/Smokey',
+      createdAt: new Date().toISOString(),
+    }));
+    await page.evaluate((items) => {
+      S.showFeed = true;
+      S.pat = 'fake-pat';
+      S.feedItems = items;
+      renderFeed();
+    }, items);
+
+    await expect(page.locator('.feed-chip')).toHaveCount(20); // 10 shown x 2
+  });
+
+  test('scrolls at 2x the original baseline speed', async ({ page }) => {
+    await page.evaluate((items) => {
+      S.showFeed = true;
+      S.pat = 'fake-pat';
+      S.feedItems = items;
+      renderFeed();
+    }, fakeItems());
+
+    const dur = await page.locator('.feed-inner').first()
+      .evaluate(el => el.style.animationDuration);
+    expect(dur).toBe('9s'); // 3 items x 3s/item — half of the pre-speedup 3 x 6s = 18s
+  });
+
   // Regression test for deaf8d4 "remove feed marquee hover-pause entirely" —
   // the strip previously paused on hover in a way that got stuck after tab
   // switches (505b385, 27baece); it now never pauses at all.

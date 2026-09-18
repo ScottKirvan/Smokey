@@ -1099,9 +1099,10 @@ function renderFeed() {
   }
   section.style.display = '';
 
-  const toShow = S.feedItems.slice(0, 5);
-  // Adjust scroll speed to chip count so pace stays roughly constant
-  const dur = Math.max(15, toShow.length * 6);
+  const toShow = S.feedItems.slice(0, 10);
+  // Adjust scroll speed to chip count so pace stays roughly constant.
+  // Halved from the original 15/6 baseline to scroll at 2x that rate.
+  const dur = Math.max(7.5, toShow.length * 3);
 
   function chipsHTML() {
     return toShow.map((item, idx) => {
