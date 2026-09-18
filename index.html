@@ -476,13 +476,10 @@ async function load() {
     ? { Authorization: `token ${S.pat}`, Accept: 'application/vnd.github.v3+json' }
     : { Accept: 'application/vnd.github.v3+json' };
 
-  // Resolve current user (needed for external-contributor filter)
-  if (S.pat && !S.currentUser) {
-    try {
-      const r = await fetch('https://api.github.com/user', { headers });
-      if (r.ok) S.currentUser = (await r.json()).login;
-    } catch(e) {}
-  }
+  // Resolve current user (needed for the external-contributor filter and the
+  // feed's /users/{username}/events URL). pollEvents() also retries this
+  // lazily on its own if it's still unresolved by the time it runs.
+  if (S.pat) await resolveCurrentUser(headers);
 
   // Fetch repo data first — loadTraffic() and the CI merge below both need
   // the canonical full_name GitHub resolved, which can differ from the raw
@@ -506,7 +503,7 @@ async function load() {
     } catch(e) {
       console.error('PAT-gated fetch failed:', e);
     }
-    if (S.showFeed && S.currentUser) startFeedPoll();
+    if (S.showFeed) startFeedPoll();
     if (S.showNotifs) startNotifPoll();
   }
 
@@ -941,7 +938,7 @@ function esc(s) {
 
 // ── Feed ──────────────────────────────────────────────
 function startFeedPoll() {
-  if (!S.showFeed || !S.pat || !S.currentUser) return;
+  if (!S.showFeed || !S.pat) return;
   if (S.feedPollTimer) return; // guard against double-starting
   pollEvents();
   S.feedPollTimer = setInterval(pollEvents, 60000);
@@ -1024,12 +1021,27 @@ function mapEvent(ev) {
   };
 }
 
+async function resolveCurrentUser(headers) {
+  if (S.currentUser) return S.currentUser;
+  try {
+    const r = await fetch('https://api.github.com/user', { headers });
+    if (r.ok) S.currentUser = (await r.json()).login;
+  } catch(e) {}
+  return S.currentUser;
+}
+
 async function pollEvents() {
-  if (!S.pat || !S.currentUser) return;
+  if (!S.pat) return;
   const headers = {
     Authorization: `token ${S.pat}`,
     Accept: 'application/vnd.github.v3+json',
   };
+  // A single failed /user fetch during load() used to permanently disable
+  // the feed for the rest of the session (see feed-startup-resilience.spec.js)
+  // — retry it lazily here so this poll's own 60s interval self-heals a
+  // transient failure instead of requiring a full page reload.
+  if (!S.currentUser) await resolveCurrentUser(headers);
+  if (!S.currentUser) return; // still unresolved — try again next poll
   if (S.feedEtag) headers['If-None-Match'] = S.feedEtag;
   try {
     const r = await fetch(`https://api.github.com/users/${S.currentUser}/events`, { headers });
