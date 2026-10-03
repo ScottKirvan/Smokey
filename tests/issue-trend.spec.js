@@ -8,9 +8,19 @@ const { test, expect } = require('@playwright/test');
 
 const issue = (c, x, t) => ({ c, x, t });
 
+// The page runs its own load() on startup, which fetches from GitHub and
+// re-renders the issue chart in the background — racing whatever a test
+// renders. Block the network and wait for that run to finish first.
+async function gotoQuiet(page) {
+  await page.route(/^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//, r => r.abort());
+  await page.goto('/index.html');
+  await page.waitForFunction(() =>
+    !document.getElementById('refreshBtn').classList.contains('spinning') && !issueLoading);
+}
+
 test.describe('buildIssueSeries', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('counts opens plus closes per category per day as churn', async ({ page }) => {
@@ -48,7 +58,7 @@ test.describe('buildIssueSeries', () => {
 
 test.describe('churnStroke', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('a single event is visibly thicker than the 1.5px line', async ({ page }) => {
@@ -65,7 +75,7 @@ test.describe('churnStroke', () => {
 
 test.describe('renderIssueChart', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('draws one swell per category-day with activity, sized by churn', async ({ page }) => {
