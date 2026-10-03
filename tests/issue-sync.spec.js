@@ -9,6 +9,17 @@ const { test, expect } = require('@playwright/test');
 
 const ISSUE = (n) => ({ number: n, created_at: '2026-09-01T00:00:00Z', closed_at: null, labels: [] });
 
+// The page runs its own load() on startup, which replaces S.data and runs
+// loadIssueHistory() in the background — a test's call would return early
+// (issueLoading) or have its stubs used by that run. Block the network and
+// wait for that run to finish first.
+async function gotoQuiet(page) {
+  await page.route(/^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//, r => r.abort());
+  await page.goto('/index.html');
+  await page.waitForFunction(() =>
+    !document.getElementById('refreshBtn').classList.contains('spinning') && !issueLoading);
+}
+
 async function run(page, responses, { repos = ['o/a'], sync = {} } = {}) {
   return page.evaluate(async ({ responses, repos, sync }) => {
     localStorage.setItem('rw_sync_v1', JSON.stringify(sync));
@@ -33,7 +44,7 @@ async function run(page, responses, { repos = ['o/a'], sync = {} } = {}) {
 
 test.describe('loadIssueHistory sync bookkeeping', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('a complete fetch records the repo as synced', async ({ page }) => {
