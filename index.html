@@ -377,9 +377,9 @@ a.feed-label:hover { color: var(--text-muted); }
   <div class="chart-wrap">
     <div class="chart-no-pat" id="issueMsg">Loading issue history…</div>
     <svg id="issueChartSvg" class="issue-svg" viewBox="0 0 1000 80" preserveAspectRatio="none" style="display:none">
-      <path id="iMiscWick"/><path id="iMiscLine"/>
-      <path id="iFeatWick"/><path id="iFeatLine"/>
-      <path id="iBugWick"/> <path id="iBugLine"/>
+      <path id="iMiscLine"/><path id="iMiscWick"/>
+      <path id="iFeatLine"/><path id="iFeatWick"/>
+      <path id="iBugLine"/> <path id="iBugWick"/>
     </svg>
     <div class="x-labels" id="issueXLabels" style="display:none"></div>
   </div>
@@ -1346,21 +1346,22 @@ function buildIssueSeries(cache, monitoredRepos) {
   const days    = [], bugs = [], feats = [], misc = [];
 
   for (const day of allDays) {
-    const events = byDate[day].sort((a, b) => a.ms - b.ms);
-    const snap   = { ...cur };
-    const lo     = { ...cur }, hi = { ...cur };
+    const events  = byDate[day].sort((a, b) => a.ms - b.ms);
+    const lo      = { ...cur }, hi = { ...cur };
+    const hasOpen = { bug: false, feat: false, misc: false };
+    const hasCls  = { bug: false, feat: false, misc: false };
 
     for (const ev of events) {
-      if (ev.type === 'open') cur[ev.cat]++;
-      else cur[ev.cat] = Math.max(0, cur[ev.cat] - 1);
+      if (ev.type === 'open') { cur[ev.cat]++; hasOpen[ev.cat] = true; }
+      else { cur[ev.cat] = Math.max(0, cur[ev.cat] - 1); hasCls[ev.cat] = true; }
       lo[ev.cat] = Math.min(lo[ev.cat], cur[ev.cat]);
       hi[ev.cat] = Math.max(hi[ev.cat], cur[ev.cat]);
     }
 
     days.push(day);
-    bugs.push({ count: cur.bug,  high: hi.bug,  low: lo.bug  });
-    feats.push({ count: cur.feat, high: hi.feat, low: lo.feat });
-    misc.push({ count: cur.misc, high: hi.misc, low: lo.misc });
+    bugs.push({ count: cur.bug,  high: hi.bug,  low: lo.bug,  mixed: hasOpen.bug  && hasCls.bug  });
+    feats.push({ count: cur.feat, high: hi.feat, low: lo.feat, mixed: hasOpen.feat && hasCls.feat });
+    misc.push({ count: cur.misc, high: hi.misc, low: lo.misc, mixed: hasOpen.misc && hasCls.misc });
   }
 
   return { days, bugs, feats, misc, total: issues.length };
@@ -1401,17 +1402,13 @@ function renderIssueChart(series) {
 
   function buildPaths(pts) {
     if (!pts.length) return { line: '', wick: '' };
-    let line = `M0,${yp(0)}`, wick = '', prev = 0;
+    let line = `M0,${yp(0)}`, wick = '';
     for (let i = 0; i < series.days.length; i++) {
       const x = xp(series.days[i]), pt = pts[i];
       line += ` H${x} V${yp(pt.count)}`;
-      // Only draw wick when intraday range extends beyond the step — i.e. mixed
-      // opens and closes on the same day cause a swing the step doesn't show
-      const lo = Math.min(prev, pt.count), hi = Math.max(prev, pt.count);
-      if (pt.high > hi || pt.low < lo) {
-        wick += `M${x},${yp(Math.max(pt.high, hi))} L${x},${yp(Math.min(pt.low, lo))} `;
-      }
-      prev = pt.count;
+      // Draw wick on any day with both opens and closes — marks churn even
+      // when the net change hides the intraday swing from the step alone
+      if (pt.mixed) wick += `M${x},${yp(pt.high)} L${x},${yp(pt.low)} `;
     }
     line += ` H${W}`;
     return { line, wick: wick.trim() };
