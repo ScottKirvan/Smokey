@@ -117,9 +117,9 @@ header {
 #iBugLine  { stroke:var(--ext);      stroke-width:1.5; fill:none; stroke-linejoin:round; }
 #iFeatLine { stroke:var(--accent);   stroke-width:1.5; fill:none; stroke-linejoin:round; }
 #iMiscLine { stroke:var(--text-dim); stroke-width:1;   fill:none; stroke-linejoin:round; opacity:0.6; }
-#iBugWick  { stroke:var(--ext);      stroke-width:2;   fill:none; opacity:0.45; }
-#iFeatWick { stroke:var(--accent);   stroke-width:2;   fill:none; opacity:0.45; }
-#iMiscWick { stroke:var(--text-dim); stroke-width:2;   fill:none; opacity:0.25; }
+#iBugWick  { stroke:var(--ext);      stroke-width:2.5px; fill:none; opacity:0.6; vector-effect:non-scaling-stroke; }
+#iFeatWick { stroke:var(--accent);   stroke-width:2.5px; fill:none; opacity:0.6; vector-effect:non-scaling-stroke; }
+#iMiscWick { stroke:var(--text-dim); stroke-width:2.5px; fill:none; opacity:0.35; vector-effect:non-scaling-stroke; }
 .issue-svg { height:80px !important; }
 
 /* ── Attention badges ── */
@@ -1401,11 +1401,17 @@ function renderIssueChart(series) {
 
   function buildPaths(pts) {
     if (!pts.length) return { line: '', wick: '' };
-    let line = `M0,${yp(0)}`, wick = '';
+    let line = `M0,${yp(0)}`, wick = '', prev = 0;
     for (let i = 0; i < series.days.length; i++) {
       const x = xp(series.days[i]), pt = pts[i];
       line += ` H${x} V${yp(pt.count)}`;
-      if (pt.high !== pt.low) wick += `M${x},${yp(pt.high)} L${x},${yp(pt.low)} `;
+      // Only draw wick when intraday range extends beyond the step — i.e. mixed
+      // opens and closes on the same day cause a swing the step doesn't show
+      const lo = Math.min(prev, pt.count), hi = Math.max(prev, pt.count);
+      if (pt.high > hi || pt.low < lo) {
+        wick += `M${x},${yp(Math.max(pt.high, hi))} L${x},${yp(Math.min(pt.low, lo))} `;
+      }
+      prev = pt.count;
     }
     line += ` H${W}`;
     return { line, wick: wick.trim() };
