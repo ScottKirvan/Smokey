@@ -117,9 +117,10 @@ header {
 #iBugLine  { stroke:var(--ext);      stroke-width:1.5; fill:none; stroke-linejoin:round; }
 #iFeatLine { stroke:var(--accent);   stroke-width:1.5; fill:none; stroke-linejoin:round; }
 #iMiscLine { stroke:var(--text-dim); stroke-width:1;   fill:none; stroke-linejoin:round; opacity:0.6; }
-#iBugWick  { stroke:var(--ext);      stroke-width:2.5px; fill:none; opacity:0.6; vector-effect:non-scaling-stroke; }
-#iFeatWick { stroke:var(--accent);   stroke-width:2.5px; fill:none; opacity:0.6; vector-effect:non-scaling-stroke; }
-#iMiscWick { stroke:var(--text-dim); stroke-width:2.5px; fill:none; opacity:0.35; vector-effect:non-scaling-stroke; }
+#iBugBeads  { stroke:var(--ext);      opacity:0.55; }
+#iFeatBeads { stroke:var(--accent);   opacity:0.55; }
+#iMiscBeads { stroke:var(--text-dim); opacity:0.45; }
+.issue-bead { fill:none; stroke-linecap:round; vector-effect:non-scaling-stroke; }
 .issue-svg { height:80px !important; }
 
 /* ── Attention badges ── */
@@ -377,9 +378,9 @@ a.feed-label:hover { color: var(--text-muted); }
   <div class="chart-wrap">
     <div class="chart-no-pat" id="issueMsg">Loading issue history…</div>
     <svg id="issueChartSvg" class="issue-svg" viewBox="0 0 1000 80" preserveAspectRatio="none" style="display:none">
-      <path id="iMiscWick"/><path id="iMiscLine"/>
-      <path id="iFeatWick"/><path id="iFeatLine"/>
-      <path id="iBugWick"/> <path id="iBugLine"/>
+      <path id="iMiscLine"/><g id="iMiscBeads"></g>
+      <path id="iFeatLine"/><g id="iFeatBeads"></g>
+      <path id="iBugLine"/><g id="iBugBeads"></g>
     </svg>
     <div class="x-labels" id="issueXLabels" style="display:none"></div>
   </div>
@@ -1329,41 +1330,33 @@ function buildIssueSeries(cache, monitoredRepos) {
   }
   if (!issues.length) return null;
 
-  // Collect all events keyed by date
   const byDate = {};
-  function addEv(ts, cat, type) {
+  function tally(ts, cat, delta) {
     const day = ts.slice(0, 10);
-    if (!byDate[day]) byDate[day] = [];
-    byDate[day].push({ ms: new Date(ts).getTime(), cat, type });
+    byDate[day] ??= { bug: { net: 0, churn: 0 }, feat: { net: 0, churn: 0 }, misc: { net: 0, churn: 0 } };
+    byDate[day][cat].net += delta;
+    byDate[day][cat].churn++;
   }
   for (const i of issues) {
-    addEv(i.c, i.t, 'open');
-    if (i.x) addEv(i.x, i.t, 'close');
+    tally(i.c, i.t, 1);
+    if (i.x) tally(i.x, i.t, -1);
   }
 
-  const allDays = Object.keys(byDate).sort();
-  const cur     = { bug: 0, feat: 0, misc: 0 };
-  const days    = [], bugs = [], feats = [], misc = [];
-
-  for (const day of allDays) {
-    const events = byDate[day].sort((a, b) => a.ms - b.ms);
-    const snap   = { ...cur };
-    const lo     = { ...cur }, hi = { ...cur };
-
-    for (const ev of events) {
-      if (ev.type === 'open') cur[ev.cat]++;
-      else cur[ev.cat] = Math.max(0, cur[ev.cat] - 1);
-      lo[ev.cat] = Math.min(lo[ev.cat], cur[ev.cat]);
-      hi[ev.cat] = Math.max(hi[ev.cat], cur[ev.cat]);
+  const days = Object.keys(byDate).sort();
+  const cur  = { bug: 0, feat: 0, misc: 0 };
+  const out  = { bug: [], feat: [], misc: [] };
+  for (const day of days) {
+    for (const cat of ['bug', 'feat', 'misc']) {
+      cur[cat] += byDate[day][cat].net;
+      out[cat].push({ count: cur[cat], churn: byDate[day][cat].churn });
     }
-
-    days.push(day);
-    bugs.push({ count: cur.bug,  high: hi.bug,  low: lo.bug  });
-    feats.push({ count: cur.feat, high: hi.feat, low: lo.feat });
-    misc.push({ count: cur.misc, high: hi.misc, low: lo.misc });
   }
 
-  return { days, bugs, feats, misc, total: issues.length };
+  return { days, bugs: out.bug, feats: out.feat, misc: out.misc, total: issues.length };
+}
+
+function churnStroke(churn) {
+  return Math.min(12, Math.round((2 + 2.2 * Math.sqrt(churn)) * 10) / 10);
 }
 
 function renderIssueChart(series) {
@@ -1387,9 +1380,9 @@ function renderIssueChart(series) {
   const now = Date.now();
   const maxDays = Math.max(1, (now - new Date(series.days[0] + 'T00:00:00Z').getTime()) / 86400000);
   const maxCount = Math.max(
-    ...series.bugs.map(b  => b.high),
-    ...series.feats.map(f => f.high),
-    ...series.misc.map(m  => m.high),
+    ...series.bugs.map(b  => b.count),
+    ...series.feats.map(f => f.count),
+    ...series.misc.map(m  => m.count),
     1
   );
 
@@ -1399,31 +1392,28 @@ function renderIssueChart(series) {
   }
   function yp(n) { return Math.round(PAD + CH - (n / maxCount) * CH); }
 
+  // A swell is a round-capped vertical stroke over the day's step, so its
+  // thickness beyond the line is the stroke width; the tiny length keeps a
+  // flat (net-zero) day drawable, since zero-length subpaths can be skipped.
   function buildPaths(pts) {
-    if (!pts.length) return { line: '', wick: '' };
-    let line = `M0,${yp(0)}`, wick = '', prev = 0;
+    let line = `M0,${yp(0)}`, beads = '', prev = 0;
     for (let i = 0; i < series.days.length; i++) {
       const x = xp(series.days[i]), pt = pts[i];
       line += ` H${x} V${yp(pt.count)}`;
-      // Only draw wick when intraday range extends beyond the step — i.e. mixed
-      // opens and closes on the same day cause a swing the step doesn't show
-      const lo = Math.min(prev, pt.count), hi = Math.max(prev, pt.count);
-      if (pt.high > hi || pt.low < lo) {
-        wick += `M${x},${yp(Math.max(pt.high, hi))} L${x},${yp(Math.min(pt.low, lo))} `;
+      if (pt.churn > 0) {
+        const top = yp(Math.max(prev, pt.count)), bot = Math.max(yp(Math.min(prev, pt.count)), top + 0.01);
+        beads += `<path class="issue-bead" d="M${x},${top} L${x},${bot}" stroke-width="${churnStroke(pt.churn)}"/>`;
       }
       prev = pt.count;
     }
-    line += ` H${W}`;
-    return { line, wick: wick.trim() };
+    return { line: line + ` H${W}`, beads };
   }
 
-  const b = buildPaths(series.bugs), f = buildPaths(series.feats), m = buildPaths(series.misc);
-  document.getElementById('iBugLine').setAttribute('d', b.line);
-  document.getElementById('iBugWick').setAttribute('d', b.wick);
-  document.getElementById('iFeatLine').setAttribute('d', f.line);
-  document.getElementById('iFeatWick').setAttribute('d', f.wick);
-  document.getElementById('iMiscLine').setAttribute('d', m.line);
-  document.getElementById('iMiscWick').setAttribute('d', m.wick);
+  for (const [id, pts] of [['Bug', series.bugs], ['Feat', series.feats], ['Misc', series.misc]]) {
+    const p = buildPaths(pts);
+    document.getElementById(`i${id}Line`).setAttribute('d', p.line);
+    document.getElementById(`i${id}Beads`).innerHTML = p.beads;
+  }
 
   // X-axis milestones at log-scaled positions
   const milestones = [
