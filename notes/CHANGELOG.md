@@ -5,16 +5,16 @@
 
 ### Features
 
-* add issue trend chart with log time axis and candlestick ranges ([eb4d538](https://github.com/ScottKirvan/Smokey/commit/eb4d538d0f61d9119bc33748d8ea6cc0ce039535))
+* add issue trend chart with log time axis and candlestick ranges ([#28](https://github.com/ScottKirvan/Smokey/pull/28))
 * show 10 items in the activity feed and double the scroll speed ([a8ab1d7](https://github.com/ScottKirvan/Smokey/commit/a8ab1d793e1a0b70f9fa19d861cbab613da05dce))
 
 
 ### Bug Fixes
 
 * activity feed silently dies forever on one failed /user fetch ([2c72282](https://github.com/ScottKirvan/Smokey/commit/2c722824f940b6d2a312f22318188f765b166ed4))
-* add VitePress local search provider to docs ([371b52f](https://github.com/ScottKirvan/Smokey/commit/371b52fbb25b5106a15025e5f30434ef68cbb4e3))
-* correct candlestick wick rendering and stroke scaling ([b1b96ae](https://github.com/ScottKirvan/Smokey/commit/b1b96ae37e1a4f0d649864577987f41f7049c22f))
-* show issue-chart activity as line swells sized by opens plus closes ([e4c9cb2](https://github.com/ScottKirvan/Smokey/commit/e4c9cb2c505e232ecb1378e26d62ff0db392a3a9))
+* add VitePress local search provider to docs ([#27](https://github.com/ScottKirvan/Smokey/pull/27))
+* correct candlestick wick rendering and stroke scaling ([#29](https://github.com/ScottKirvan/Smokey/pull/29))
+* show issue-chart activity as line swells sized by opens plus closes ([#31](https://github.com/ScottKirvan/Smokey/pull/31))
 
 ## [0.3.0](https://github.com/ScottKirvan/Smokey/compare/v0.2.0...v0.3.0) (2026-09-10)
 
