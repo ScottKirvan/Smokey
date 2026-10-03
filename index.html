@@ -1285,17 +1285,17 @@ async function loadIssueHistory() {
   for (const repo of monitored) {
     const since    = sync[repo] ? `&since=${encodeURIComponent(sync[repo])}` : '';
     const syncTime = new Date().toISOString();
-    let page = 1;
-    outer: while (true) {
+    let page = 1, outcome;
+    while (!outcome) {
       try {
         const r = await fetch(
           `https://api.github.com/repos/${repo}/issues?state=all&per_page=100&page=${page}${since}`,
           { headers }
         );
-        if (r.status === 403 || r.status === 429) break outer; // rate limited
-        if (!r.ok) break outer;
+        if (r.status === 403 || r.status === 429) { outcome = 'rateLimited'; break; }
+        if (!r.ok) { outcome = 'failed'; break; }
         const items = await r.json();
-        if (!items.length) break outer;
+        if (!items.length) { outcome = 'complete'; break; }
         if (!cache[repo]) cache[repo] = {};
         for (const item of items) {
           if (item.pull_request) continue;
@@ -1306,9 +1306,12 @@ async function loadIssueHistory() {
           changed = true;
         }
         page++;
-      } catch(e) { break; }
+      } catch(e) { outcome = 'failed'; }
     }
-    sync[repo] = syncTime;
+    // Advancing the timestamp after a partial fetch would make later
+    // since= queries skip the unfetched pages forever.
+    if (outcome === 'complete') { sync[repo] = syncTime; changed = true; }
+    if (outcome === 'rateLimited') break;
   }
 
   if (changed) {
