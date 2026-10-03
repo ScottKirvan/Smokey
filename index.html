@@ -106,6 +106,22 @@ header {
 .x-labels span:first-child { transform: none; }
 .x-labels span:last-child { transform: translateX(-100%); }
 
+/* ── Issue trend chart ── */
+.issue-legend { display:flex; gap:12px; margin-left:auto; align-items:center; }
+.legend-item {
+  display:inline-flex; align-items:center; gap:4px;
+  font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:600;
+  letter-spacing:0.04em; text-transform:uppercase; color:var(--text-dim);
+}
+.legend-swatch { width:10px; height:2px; border-radius:1px; flex-shrink:0; }
+#iBugLine  { stroke:var(--ext);      stroke-width:1.5; fill:none; stroke-linejoin:round; }
+#iFeatLine { stroke:var(--accent);   stroke-width:1.5; fill:none; stroke-linejoin:round; }
+#iMiscLine { stroke:var(--text-dim); stroke-width:1;   fill:none; stroke-linejoin:round; opacity:0.6; }
+#iBugWick  { stroke:var(--ext);      stroke-width:2;   fill:none; opacity:0.45; }
+#iFeatWick { stroke:var(--accent);   stroke-width:2;   fill:none; opacity:0.45; }
+#iMiscWick { stroke:var(--text-dim); stroke-width:2;   fill:none; opacity:0.25; }
+.issue-svg { height:80px !important; }
+
 /* ── Attention badges ── */
 .attn-section {
   border-bottom: 1px solid var(--border);
@@ -349,6 +365,26 @@ a.feed-label:hover { color: var(--text-muted); }
   </div>
 </section>
 
+<section class="traffic-section" id="issueTrendSection">
+  <div class="traffic-header">
+    <span class="traffic-label">Issues <span class="traffic-range" id="issueRange"></span></span>
+    <div class="issue-legend">
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--ext)"></span>Bugs</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--accent)"></span>Feat</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--text-dim)"></span>Misc</span>
+    </div>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-no-pat" id="issueMsg">Loading issue history…</div>
+    <svg id="issueChartSvg" class="issue-svg" viewBox="0 0 1000 80" preserveAspectRatio="none" style="display:none">
+      <path id="iMiscWick"/><path id="iMiscLine"/>
+      <path id="iFeatWick"/><path id="iFeatLine"/>
+      <path id="iBugWick"/> <path id="iBugLine"/>
+    </svg>
+    <div class="x-labels" id="issueXLabels" style="display:none"></div>
+  </div>
+</section>
+
 <section id="feedSection" style="display:none">
   <span class="feed-label">FEED</span>
   <div class="feed-row" id="feedRow"></div>
@@ -510,6 +546,7 @@ async function load() {
   setPip('live');
   setSpinning(false);
   renderAll();
+  loadIssueHistory(); // async, updates chart in background
 }
 
 // ── Rate limit ────────────────────────────────────────
@@ -1220,6 +1257,184 @@ function renderNotifFeed() {
   }
 
   row.innerHTML = `<div class="feed-inner" style="animation-duration:${dur}s">${chipsHTML()}<span class="feed-sep" style="padding:0 8px">·</span>${chipsHTML()}</div>`;
+}
+
+// ── Issue trend ───────────────────────────────────────
+const ISSUE_CACHE = 'rw_issues_v1';
+const ISSUE_SYNC  = 'rw_sync_v1';
+let   issueLoading = false;
+
+async function loadIssueHistory() {
+  if (issueLoading) return;
+  issueLoading = true;
+  let cache = {}, sync = {};
+  try {
+    cache = JSON.parse(localStorage.getItem(ISSUE_CACHE) || '{}');
+    sync  = JSON.parse(localStorage.getItem(ISSUE_SYNC)  || '{}');
+  } catch(e) {}
+
+  // Render immediately from cache so the chart appears without waiting for API
+  const monitored = new Set(S.data.filter(d => !d.error).map(d => d.full_name));
+  renderIssueChart(buildIssueSeries(cache, monitored));
+
+  const headers = S.pat
+    ? { Authorization: `token ${S.pat}`, Accept: 'application/vnd.github.v3+json' }
+    : { Accept: 'application/vnd.github.v3+json' };
+
+  let changed = false;
+  for (const repo of monitored) {
+    const since    = sync[repo] ? `&since=${encodeURIComponent(sync[repo])}` : '';
+    const syncTime = new Date().toISOString();
+    let page = 1;
+    outer: while (true) {
+      try {
+        const r = await fetch(
+          `https://api.github.com/repos/${repo}/issues?state=all&per_page=100&page=${page}${since}`,
+          { headers }
+        );
+        if (r.status === 403 || r.status === 429) break outer; // rate limited
+        if (!r.ok) break outer;
+        const items = await r.json();
+        if (!items.length) break outer;
+        if (!cache[repo]) cache[repo] = {};
+        for (const item of items) {
+          if (item.pull_request) continue;
+          const lbls = (item.labels || []).map(l => l.name);
+          const cat  = lbls.includes('bug') ? 'bug'
+                     : lbls.includes('enhancement') ? 'feat' : 'misc';
+          cache[repo][item.number] = { c: item.created_at, x: item.closed_at, t: cat };
+          changed = true;
+        }
+        page++;
+      } catch(e) { break; }
+    }
+    sync[repo] = syncTime;
+  }
+
+  if (changed) {
+    try {
+      localStorage.setItem(ISSUE_CACHE, JSON.stringify(cache));
+      localStorage.setItem(ISSUE_SYNC,  JSON.stringify(sync));
+    } catch(e) {}
+    renderIssueChart(buildIssueSeries(cache, monitored));
+  }
+  issueLoading = false;
+}
+
+function buildIssueSeries(cache, monitoredRepos) {
+  const issues = [];
+  for (const [repo, repoIssues] of Object.entries(cache)) {
+    if (!monitoredRepos.has(repo)) continue;
+    for (const i of Object.values(repoIssues)) issues.push(i);
+  }
+  if (!issues.length) return null;
+
+  // Collect all events keyed by date
+  const byDate = {};
+  function addEv(ts, cat, type) {
+    const day = ts.slice(0, 10);
+    if (!byDate[day]) byDate[day] = [];
+    byDate[day].push({ ms: new Date(ts).getTime(), cat, type });
+  }
+  for (const i of issues) {
+    addEv(i.c, i.t, 'open');
+    if (i.x) addEv(i.x, i.t, 'close');
+  }
+
+  const allDays = Object.keys(byDate).sort();
+  const cur     = { bug: 0, feat: 0, misc: 0 };
+  const days    = [], bugs = [], feats = [], misc = [];
+
+  for (const day of allDays) {
+    const events = byDate[day].sort((a, b) => a.ms - b.ms);
+    const snap   = { ...cur };
+    const lo     = { ...cur }, hi = { ...cur };
+
+    for (const ev of events) {
+      if (ev.type === 'open') cur[ev.cat]++;
+      else cur[ev.cat] = Math.max(0, cur[ev.cat] - 1);
+      lo[ev.cat] = Math.min(lo[ev.cat], cur[ev.cat]);
+      hi[ev.cat] = Math.max(hi[ev.cat], cur[ev.cat]);
+    }
+
+    days.push(day);
+    bugs.push({ count: cur.bug,  high: hi.bug,  low: lo.bug  });
+    feats.push({ count: cur.feat, high: hi.feat, low: lo.feat });
+    misc.push({ count: cur.misc, high: hi.misc, low: lo.misc });
+  }
+
+  return { days, bugs, feats, misc, total: issues.length };
+}
+
+function renderIssueChart(series) {
+  const msg  = document.getElementById('issueMsg');
+  const svg  = document.getElementById('issueChartSvg');
+  const xlbl = document.getElementById('issueXLabels');
+  const rng  = document.getElementById('issueRange');
+
+  if (!series || !series.days.length) {
+    msg.textContent    = series ? 'No issue data yet.' : 'Loading issue history…';
+    msg.style.display  = '';
+    svg.style.display  = 'none';
+    xlbl.style.display = 'none';
+    rng.textContent    = '';
+    return;
+  }
+
+  msg.style.display = 'none'; svg.style.display = 'block'; xlbl.style.display = '';
+
+  const W = 1000, H = 80, PAD = 6, BOT = 18, CH = H - PAD - BOT;
+  const now = Date.now();
+  const maxDays = Math.max(1, (now - new Date(series.days[0] + 'T00:00:00Z').getTime()) / 86400000);
+  const maxCount = Math.max(
+    ...series.bugs.map(b  => b.high),
+    ...series.feats.map(f => f.high),
+    ...series.misc.map(m  => m.high),
+    1
+  );
+
+  function xp(dateStr) {
+    const ago = Math.max(0, (now - new Date(dateStr + 'T12:00:00Z').getTime()) / 86400000);
+    return Math.round(W * (1 - Math.log(ago + 1) / Math.log(maxDays + 1)));
+  }
+  function yp(n) { return Math.round(PAD + CH - (n / maxCount) * CH); }
+
+  function buildPaths(pts) {
+    if (!pts.length) return { line: '', wick: '' };
+    let line = `M0,${yp(0)}`, wick = '';
+    for (let i = 0; i < series.days.length; i++) {
+      const x = xp(series.days[i]), pt = pts[i];
+      line += ` H${x} V${yp(pt.count)}`;
+      if (pt.high !== pt.low) wick += `M${x},${yp(pt.high)} L${x},${yp(pt.low)} `;
+    }
+    line += ` H${W}`;
+    return { line, wick: wick.trim() };
+  }
+
+  const b = buildPaths(series.bugs), f = buildPaths(series.feats), m = buildPaths(series.misc);
+  document.getElementById('iBugLine').setAttribute('d', b.line);
+  document.getElementById('iBugWick').setAttribute('d', b.wick);
+  document.getElementById('iFeatLine').setAttribute('d', f.line);
+  document.getElementById('iFeatWick').setAttribute('d', f.wick);
+  document.getElementById('iMiscLine').setAttribute('d', m.line);
+  document.getElementById('iMiscWick').setAttribute('d', m.wick);
+
+  // X-axis milestones at log-scaled positions
+  const milestones = [
+    { label: '1mo', days: 30 }, { label: '6mo', days: 182 },
+    { label: '1yr', days: 365 }, { label: '2yr', days: 730 },
+    { label: '3yr', days: 1095 },
+  ].filter(ms => ms.days < maxDays);
+
+  const spans = milestones.map(ms => {
+    const pct = ((W * (1 - Math.log(ms.days + 1) / Math.log(maxDays + 1))) / W * 100).toFixed(1);
+    return `<span style="left:${pct}%">${ms.label}</span>`;
+  });
+  spans.push(`<span style="right:0">today</span>`);
+  xlbl.innerHTML = spans.join('');
+
+  const yrs = (maxDays / 365);
+  rng.textContent = `· ${series.total} issues · ${yrs < 1 ? Math.round(yrs * 12) + 'mo' : (Math.round(yrs * 10) / 10) + 'yr'} history`;
 }
 
 document.addEventListener('keydown', e => {
