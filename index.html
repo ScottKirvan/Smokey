@@ -131,31 +131,30 @@ header {
 .issue-svg { height:80px !important; }
 #issueChartSvg { overflow: hidden; } /* taller diamonds clip at the chart edge instead of bleeding into the page */
 /* Additive in dark mode so overlapping marks add up to light instead of covering each other */
-.issue-candle, .issue-glow, .issue-line, .issue-line-glow, .issue-now { mix-blend-mode: var(--issue-blend); }
+.issue-candle, .issue-glow, .issue-line, .issue-line-glow, .issue-now, .issue-scan { mix-blend-mode: var(--issue-blend); }
 .issue-grid { stroke: var(--text-dim); opacity: var(--issue-grid-opacity); }
 .issue-grid-minor { opacity: calc(var(--issue-grid-opacity) * 0.55); }
-.issue-now-halo { animation: issue-now-pulse 2.4s ease-out infinite; }
+/* Today dots are HTML over the SVG, not SVG: their pulse animates only
+   transform/opacity, which the browser composites without repainting the
+   chart. Pulsing an SVG stroke-width repainted the whole chart every frame,
+   halving the page's frame rate and making the tickers jitter. */
+.issue-now-dots { position: absolute; left: 0; right: 0; top: 0; height: 80px; pointer-events: none; }
+.issue-now-dot { position: absolute; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; }
+.issue-now-dot::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; background: inherit;
+  animation: issue-now-pulse 2.4s ease-out infinite;
+}
 @keyframes issue-now-pulse {
-  from { stroke-width: 5px;  opacity: 0.7; }
-  to   { stroke-width: 16px; opacity: 0; }
+  from { transform: scale(1);   opacity: 0.7; }
+  to   { transform: scale(3.2); opacity: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .issue-now-halo { animation: none; opacity: 0; } }
-/* Sweep: needles and glows stay hidden until the front reaches them, then ignite */
+@media (prefers-reduced-motion: reduce) { .issue-now-dot::after { animation: none; opacity: 0; } }
+/* Sweep: the clip reveals needles as the front passes, with a scanline at the
+   front. No per-needle CSS animation: one per needle (hundreds) made the sweep
+   drop to a few frames a second, and with fill-mode holding the final frame
+   they stayed attached afterwards, costing every frame even once it ended. */
 @media (prefers-reduced-motion: no-preference) { #issueChartSvg { cursor: pointer; } }
-.issue-sweeping .issue-candle:not(.lit), .issue-sweeping .issue-glow:not(.lit) { visibility: hidden; }
-.issue-sweeping #issueNow { visibility: hidden; }
-.issue-candle.lit { animation: issue-ignite 450ms cubic-bezier(.2, .9, .3, 1.2) both; }
-.issue-glow.lit   { animation: issue-glow-in 450ms ease-out both; }
-.lit.settled      { animation: none; }
-@keyframes issue-ignite {
-  0%   { transform: scaleY(0);    filter: brightness(3); }
-  45%  { transform: scaleY(1.12); filter: brightness(2); }
-  100% { transform: scaleY(1);    filter: none; }
-}
-@keyframes issue-glow-in {
-  0%   { opacity: 1; }
-  100% { opacity: 0.55; }
-}
+.issue-sweeping ~ .issue-now-dots { visibility: hidden; }
 
 /* ── Attention badges ── */
 .attn-section {
@@ -413,12 +412,14 @@ a.feed-label:hover { color: var(--text-muted); }
     <div class="chart-no-pat" id="issueMsg">Loading issue history…</div>
     <svg id="issueChartSvg" class="issue-svg" viewBox="0 0 1000 80" preserveAspectRatio="none" style="display:none">
       <defs>
-        <filter id="issueGlowBlur" x="-200%" y="-200%" width="500%" height="500%">
-          <feGaussianBlur stdDeviation="1.5"/>
-        </filter>
+        <!-- Soft glows as radial gradients: a blur filter per glow circle made every repaint expensive -->
+        <radialGradient id="issueGlow-bug"><stop offset="0" style="stop-color:var(--bug-core);stop-opacity:1"/><stop offset="0.45" style="stop-color:var(--bug-core);stop-opacity:0.6"/><stop offset="1" style="stop-color:var(--bug-core);stop-opacity:0"/></radialGradient>
+        <radialGradient id="issueGlow-feat"><stop offset="0" style="stop-color:var(--feat-core);stop-opacity:1"/><stop offset="0.45" style="stop-color:var(--feat-core);stop-opacity:0.6"/><stop offset="1" style="stop-color:var(--feat-core);stop-opacity:0"/></radialGradient>
+        <radialGradient id="issueGlow-misc"><stop offset="0" style="stop-color:var(--misc-core);stop-opacity:1"/><stop offset="0.45" style="stop-color:var(--misc-core);stop-opacity:0.6"/><stop offset="1" style="stop-color:var(--misc-core);stop-opacity:0"/></radialGradient>
         <filter id="issueLineBlur" filterUnits="userSpaceOnUse" x="-20" y="-20" width="1040" height="120">
           <feGaussianBlur stdDeviation="0.7"/>
         </filter>
+        <linearGradient id="issueScanGrad"><stop offset="0" style="stop-color:var(--text);stop-opacity:0"/><stop offset="1" style="stop-color:var(--text);stop-opacity:0.25"/></linearGradient>
         <clipPath id="issueSweepClip" clipPathUnits="userSpaceOnUse"><rect id="issueSweepRect" x="0" y="0" width="1000" height="80"/></clipPath>
       </defs>
       <g id="issueGrid"></g>
@@ -427,9 +428,9 @@ a.feed-label:hover { color: var(--text-muted); }
         <g id="iFeatBeads"></g>
         <g id="iBugBeads"></g>
       </g>
-      <g id="issueNow"></g>
       <g id="issueHeads"></g>
     </svg>
+    <div class="issue-now-dots" id="issueNowDots"></div>
     <div class="x-labels" id="issueXLabels" style="display:none"></div>
   </div>
 </section>
@@ -1446,15 +1447,14 @@ function heatLen(n, maxVal, maxLen) {
 }
 
 // ── Issue chart sweep ────────────────────────────────
-// A one-shot left-to-right reveal: a clip uncovers the lines, a bright dot
-// rides each line at the front, and each needle ignites (grows out of its
-// line with a brightness flash) as the front reaches it; the pulsing today
-// dots take over where the riding dots stop. Plays once per load() run and
-// on any click on the chart. Skipped entirely under prefers-reduced-motion.
-// It only reveals — every mark ends at the geometry renderIssueChart drew.
-const SWEEP_MS = 1500;
-let issueSweepGeom = null;   // { XW, lines: [{ core, pts: [[x, y], ...] }] } from the last render
-let issueRenderVersion = 0;  // bumped per render so a mid-sweep re-render is picked up
+// A one-shot left-to-right reveal: a clip uncovers the lines and needles
+// behind a moving front, a scanline marks the front, and a bright dot rides
+// each line at it; the pulsing today dots take over where the riding dots
+// stop. Plays once per load() run and on any click on the chart. Skipped
+// entirely under prefers-reduced-motion. Everything it touches per frame is a
+// handful of elements (clip width, scanline, three dots), never the needles.
+const SWEEP_MS = 3000;
+let issueSweepGeom = null;   // { XW, unitsPerPx, lines: [{ core, pts: [[x, y], ...] }] } from the last render
 let issueSweepRaf = 0;
 
 function lineYAt(pts, x) {
@@ -1469,7 +1469,8 @@ function lineYAt(pts, x) {
   return pts[pts.length - 1][1];
 }
 
-function finishIssueSweep() {
+function stopIssueSweep() {
+  cancelAnimationFrame(issueSweepRaf);
   issueSweepRaf = 0;
   document.getElementById('issueChartSvg').classList.remove('issue-sweeping');
   document.getElementById('issueSweep').removeAttribute('clip-path');
@@ -1477,48 +1478,34 @@ function finishIssueSweep() {
   document.getElementById('issueHeads').innerHTML = '';
 }
 
-function stopIssueSweep() {
-  cancelAnimationFrame(issueSweepRaf);
-  finishIssueSweep();
-  document.querySelectorAll('#issueChartSvg .lit').forEach(el => el.classList.remove('lit', 'settled'));
-}
-
 function playIssueSweep() {
   if (!issueSweepGeom || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   stopIssueSweep();
-  const svg   = document.getElementById('issueChartSvg');
   const rect  = document.getElementById('issueSweepRect');
   const heads = document.getElementById('issueHeads');
-  svg.classList.add('issue-sweeping');
+  document.getElementById('issueChartSvg').classList.add('issue-sweeping');
   document.getElementById('issueSweep').setAttribute('clip-path', 'url(#issueSweepClip)');
   rect.setAttribute('width', '0');
 
-  let version = -1, pending = [];
   const start = performance.now();
   function frame() {
     // performance.now() rather than rAF's timestamp: the frame timestamp can
     // predate `start`, which would make t (and the clip width) negative.
     const t = Math.min(1, Math.max(0, (performance.now() - start) / SWEEP_MS));
-    const { XW, lines } = issueSweepGeom;
-    const front = XW * (1 - (1 - t) * (1 - t)); // eases into "today"
-    if (version !== issueRenderVersion) {
-      // A re-render mid-sweep replaces the marks: ones the front already
-      // passed appear without re-igniting, the rest wait their turn.
-      const rerender = version !== -1;
-      version = issueRenderVersion;
-      pending = [...svg.querySelectorAll('.issue-candle, .issue-glow')]
-        .map(el => ({ el, x: +el.dataset.x })).sort((a, b) => a.x - b.x);
-      if (rerender) while (pending.length && pending[0].x <= front) pending.shift().el.classList.add('lit', 'settled');
-    }
-    while (pending.length && pending[0].x <= front) pending.shift().el.classList.add('lit');
-    rect.setAttribute('width', front.toFixed(1));
-    heads.innerHTML = lines.map(l => {
-      const d = `M${front.toFixed(1)},${lineYAt(l.pts, front).toFixed(2)}h0.01`;
-      return `<path class="issue-now" d="${d}" stroke="${l.core}" stroke-width="12" stroke-linecap="round" opacity="0.35" vector-effect="non-scaling-stroke"/>`
-           + `<path class="issue-now issue-head" d="${d}" stroke="${l.core}" stroke-width="5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
-    }).join('');
+    const { XW, unitsPerPx, lines } = issueSweepGeom;
+    const front = XW * t; // constant speed: an ease-out covered 2/3 of the width in the first few frames
+    const f = front.toFixed(1), trail = 24 * unitsPerPx;
+    rect.setAttribute('width', f);
+    heads.innerHTML =
+        `<rect class="issue-scan" x="${(front - trail).toFixed(1)}" y="0" width="${trail.toFixed(1)}" height="80" fill="url(#issueScanGrad)"/>`
+      + `<line class="issue-scan" x1="${f}" y1="0" x2="${f}" y2="80" stroke="var(--text)" stroke-width="1" opacity="0.6" vector-effect="non-scaling-stroke"/>`
+      + lines.map(l => {
+          const d = `M${f},${lineYAt(l.pts, front).toFixed(2)}h0.01`;
+          return `<path class="issue-now" d="${d}" stroke="${l.core}" stroke-width="12" stroke-linecap="round" opacity="0.35" vector-effect="non-scaling-stroke"/>`
+               + `<path class="issue-now issue-head" d="${d}" stroke="${l.core}" stroke-width="5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+        }).join('');
     if (t < 1) issueSweepRaf = requestAnimationFrame(frame);
-    else finishIssueSweep();
+    else stopIssueSweep();
   }
   issueSweepRaf = requestAnimationFrame(frame);
 }
@@ -1532,6 +1519,7 @@ function renderIssueChart(series) {
   if (!series || !series.days.length) {
     stopIssueSweep();
     issueSweepGeom = null;
+    document.getElementById('issueNowDots').innerHTML = '';
     msg.textContent    = series ? 'No issue data yet.' : 'Loading issue history…';
     msg.style.display  = '';
     svg.style.display  = 'none';
@@ -1596,13 +1584,11 @@ function renderIssueChart(series) {
          + `<polyline class="issue-line" points="${points}" fill="none" stroke="${color}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
   }
 
-  // A zero-length path with a round cap and non-scaling-stroke renders as a
-  // true circle in screen pixels, where a <circle> would be squashed into an
-  // oval by the stretched viewBox.
+  // HTML, positioned over the SVG: left as a percentage tracks the stretched
+  // viewBox, and 1 unit of height is exactly 1px (80 units in an 80px box).
   function buildNow(pts, color) {
-    const d = `M${XW.toFixed(1)},${yp(pts[pts.length - 1].count).toFixed(2)}h0.01`;
-    return `<path class="issue-now issue-now-halo" d="${d}" stroke="${color}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`
-         + `<path class="issue-now" d="${d}" stroke="${color}" stroke-width="5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+    const y = yp(pts[pts.length - 1].count);
+    return `<div class="issue-now-dot" style="left:${(XW / W * 100).toFixed(3)}%;top:${y}px;background:${color}"></div>`;
   }
 
   // Each candle is a thin vertical needle centered on y0 — the day's
@@ -1654,9 +1640,8 @@ function renderIssueChart(series) {
            +   `<stop offset="${lowerColorStart}" style="stop-color:${color}"/>`
            +   `<stop offset="1" style="stop-color:${color}"/>`
            + `</linearGradient>`
-           + `<circle class="issue-glow" data-x="${x}" cx="${x.toFixed(1)}" cy="${y0.toFixed(2)}" r="${glowR.toFixed(1)}" fill="${core}" opacity="0.55" filter="url(#issueGlowBlur)"/>`
-           // transform-origin at y0 so the sweep's ignite grows the needle out of its line
-           + `<polygon class="issue-candle" data-x="${x}" style="transform-origin:${x}px ${y0}px" points="${points}" fill="url(#${gradId})"/>`;
+           + `<circle class="issue-glow" cx="${x.toFixed(1)}" cy="${y0.toFixed(2)}" r="${(glowR + 3).toFixed(1)}" fill="url(#issueGlow-${catId.toLowerCase()})" opacity="0.55"/>`
+           + `<polygon class="issue-candle" points="${points}" fill="url(#${gradId})"/>`;
     }
     return out;
   }
@@ -1677,9 +1662,8 @@ function renderIssueChart(series) {
              .concat([[XW, yp(pts[pts.length - 1].count)]]),
     });
   }
-  document.getElementById('issueNow').innerHTML = nowDots;
-  issueSweepGeom = { XW, lines: sweepLines };
-  issueRenderVersion++;
+  document.getElementById('issueNowDots').innerHTML = nowDots;
+  issueSweepGeom = { XW, unitsPerPx, lines: sweepLines };
 
   // X-axis milestones at log-scaled positions
   const milestones = [

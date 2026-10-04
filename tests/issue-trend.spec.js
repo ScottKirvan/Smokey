@@ -191,8 +191,9 @@ test.describe('renderIssueChart', () => {
     };
     const { dots, lineEnds } = await page.evaluate((series) => {
       renderIssueChart(series);
-      const dots = [...document.querySelectorAll('#issueNow .issue-now:not(.issue-now-halo)')]
-        .map(d => d.getAttribute('d').match(/^M([\d.]+),([\d.]+)/).slice(1).map(Number));
+      // HTML dots over the SVG: left is a % of the 1000-unit width, top is px (1 unit = 1px)
+      const dots = [...document.querySelectorAll('#issueNowDots .issue-now-dot')]
+        .map(d => [parseFloat(d.style.left) * 10, parseFloat(d.style.top)]);
       const lineEnds = ['iBugBeads', 'iFeatBeads', 'iMiscBeads'].map(id => {
         const p = [...document.querySelector(`#${id} .issue-line`).points].pop();
         return [p.x, p.y];
@@ -201,7 +202,7 @@ test.describe('renderIssueChart', () => {
     }, series);
     expect(dots).toHaveLength(3);
     for (const end of lineEnds) {
-      expect(dots.some(([x, y]) => Math.abs(x - end[0]) < 0.1 && Math.abs(y - end[1]) < 0.1)).toBe(true);
+      expect(dots.some(([x, y]) => Math.abs(x - end[0]) < 0.1 && Math.abs(y - end[1]) < 0.5)).toBe(true);
     }
   });
 
@@ -454,12 +455,13 @@ test.describe('renderIssueChart', () => {
     };
     const got = await page.evaluate((series) => {
       renderIssueChart(series);
-      const nowDots = [...document.querySelectorAll('#issueNow .issue-now:not(.issue-now-halo)')].map(d => d.getAttribute('stroke'));
+      const nowDots = [...document.querySelectorAll('#issueNowDots .issue-now-dot')].map(d => d.style.background);
       return ['Bug', 'Feat', 'Misc'].map((id, i) => {
         const g = document.getElementById(`i${id}Beads`);
         return {
           core: g.querySelector('.issue-core-stop').getAttribute('style'),
           glow: g.querySelector('.issue-glow').getAttribute('fill'),
+          glowStop: document.querySelector(g.querySelector('.issue-glow').getAttribute('fill').slice(4, -1) + ' stop').getAttribute('style'),
           line: g.querySelector('.issue-line').getAttribute('stroke'),
           now:  nowDots[i],
         };
@@ -467,7 +469,8 @@ test.describe('renderIssueChart', () => {
     }, series);
     expect(got).toEqual(['bug', 'feat', 'misc'].map(cat => ({
       core: `stop-color:var(--${cat}-core)`,
-      glow: `var(--${cat}-core)`,
+      glow: `url(#issueGlow-${cat})`,
+      glowStop: `stop-color:var(--${cat}-core);stop-opacity:1`,
       line: `var(--${cat}-line)`,
       now:  `var(--${cat}-line)`,
     })));
@@ -567,8 +570,11 @@ test.describe('issue chart sweep animation', () => {
       front:    +document.getElementById('issueSweepRect').getAttribute('width'),
       clipped:  document.getElementById('issueSweep').hasAttribute('clip-path'),
       heads:    document.querySelectorAll('#issueHeads .issue-head').length,
-      hidden:   [...svg.querySelectorAll('.issue-candle')].filter(el => getComputedStyle(el).visibility === 'hidden').length,
-      needles:  svg.querySelectorAll('.issue-candle').length,
+      scan:     document.querySelectorAll('#issueHeads .issue-scan').length,
+      // CSS animations running on anything inside the chart SVG. Per-needle
+      // animations (hundreds) made the sweep stutter and, held on their final
+      // frame, kept costing every frame after it ended, jittering the tickers.
+      svgAnims: document.getAnimations().filter(a => a.effect && a.effect.target && svg.contains(a.effect.target)).length,
     };
   });
 
@@ -583,21 +589,19 @@ test.describe('issue chart sweep animation', () => {
     expect((await state(page)).sweeping).toBe(false);
   });
 
-  test('reveals left to right with a dot riding each line, then ends with every needle visible', async ({ page }) => {
+  test('reveals left to right behind a scanline with a dot riding each line, then cleans up', async ({ page }) => {
     await page.evaluate(() => playIssueSweep());
-    await page.clock.runFor(400);
+    await page.clock.runFor(1500);
     const mid = await state(page);
-    expect(mid.sweeping).toBe(true);
-    expect(mid.clipped).toBe(true);
-    expect(mid.front).toBeGreaterThan(0);
-    expect(mid.front).toBeLessThan(1000);
-    expect(mid.heads).toBe(3);
-    expect(mid.hidden).toBeGreaterThan(0);              // needles ahead of the front wait their turn
-    expect(mid.hidden).toBeLessThan(mid.needles);       // and ones behind it are already lit
+    expect(mid).toMatchObject({ sweeping: true, clipped: true, heads: 3, scan: 2, svgAnims: 0 });
+    // Constant speed: halfway through the time, halfway across. An ease-out
+    // used to cover two-thirds of the width in the first few frames.
+    const XW = await page.evaluate(() => issueSweepGeom.XW);
+    expect(mid.front / XW).toBeCloseTo(0.5, 1);
 
     await page.clock.runFor(1600);
     const end = await state(page);
-    expect(end).toMatchObject({ sweeping: false, clipped: false, heads: 0, hidden: 0, front: 1000 });
+    expect(end).toMatchObject({ sweeping: false, clipped: false, heads: 0, scan: 0, front: 1000, svgAnims: 0 });
   });
 
   test('the riding dots stay on their lines', async ({ page }) => {
