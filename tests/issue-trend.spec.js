@@ -205,7 +205,7 @@ test.describe('renderIssueChart', () => {
     }
   });
 
-  test('draws faint gridlines plus a tick under each milestone label and under today', async ({ page }) => {
+  test('draws a half-pixel grid: quarter-height horizontals, a vertical at each milestone, and a tick under today', async ({ page }) => {
     // ~2 years of history: milestones at 1mo, 6mo, 1yr, plus today = 4 ticks.
     const series = {
       days: ['2024-11-01', '2026-09-01'],
@@ -223,8 +223,11 @@ test.describe('renderIssueChart', () => {
         labels:     document.querySelectorAll('#issueXLabels span').length,
       };
     }, series);
-    expect(horizontal).toBe(3);
-    expect(ticks).toBe(labels); // one tick per label, "today" included
+    expect(horizontal).toBe(5);   // quarter heights
+    expect(ticks).toBe(labels);   // one vertical per label, "today" included
+    const widths = await page.evaluate(() =>
+      [...new Set([...document.querySelectorAll('#issueGrid line')].map(l => l.getAttribute('stroke-width')))]);
+    expect(widths).toEqual(['0.5']);
   });
 
   test('marks blend additively in dark mode and normally in light mode (screen would wash out to white)', async ({ page }) => {

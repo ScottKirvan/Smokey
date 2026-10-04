@@ -20,7 +20,7 @@
   --bug-core:  #ff00ff; --bug:  #2b0f12; --bug-line:  #4b1d6b;
   --feat-core: #00ffff; --feat: #052b33; --feat-line: #0e4f5a;
   --misc-core: #5a6069; --misc: #14181e; --misc-line: #3e4249;
-  --issue-blend: screen;
+  --issue-blend: screen; --issue-grid-opacity: 0.35;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
@@ -30,8 +30,11 @@
     --accent: #0969da; --accent-muted: rgba(9,105,218,0.07);
     --ext: #cf222e; --ext-muted: rgba(207,34,46,0.07);
     --good: #1a7f37; --warn: #9a6700; --ice: #0891b2;
-    --misc: #8c959f; --misc-line: #8c959f;
-    --issue-blend: normal;
+    /* Issue chart in light mode: grayscale, categories told apart by darkness */
+    --bug-core:  #24292f; --bug:  #c9d1d9; --bug-line:  #57606a;
+    --feat-core: #8c959f; --feat: #e6eaef; --feat-line: #a8b1bb;
+    --misc-core: #c9d1d9; --misc: #f0f3f6; --misc-line: #d8dee4;
+    --issue-blend: normal; --issue-grid-opacity: 0.18;
   }
 }
 :root[data-theme="light"] {
@@ -41,8 +44,10 @@
   --accent: #0969da; --accent-muted: rgba(9,105,218,0.07);
   --ext: #cf222e; --ext-muted: rgba(207,34,46,0.07);
   --good: #1a7f37; --warn: #9a6700; --ice: #0891b2;
-  --misc: #8c959f; --misc-line: #8c959f;
-  --issue-blend: normal;
+  --bug-core:  #24292f; --bug:  #c9d1d9; --bug-line:  #57606a;
+  --feat-core: #8c959f; --feat: #e6eaef; --feat-line: #a8b1bb;
+  --misc-core: #c9d1d9; --misc: #f0f3f6; --misc-line: #d8dee4;
+  --issue-blend: normal; --issue-grid-opacity: 0.18;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -127,7 +132,7 @@ header {
 #issueChartSvg { overflow: hidden; } /* taller diamonds clip at the chart edge instead of bleeding into the page */
 /* Additive in dark mode so overlapping marks add up to light instead of covering each other */
 .issue-candle, .issue-glow, .issue-line, .issue-line-glow, .issue-now { mix-blend-mode: var(--issue-blend); }
-.issue-grid { stroke: var(--text-dim); opacity: 0.3; shape-rendering: crispEdges; }
+.issue-grid { stroke: var(--text-dim); opacity: var(--issue-grid-opacity); }
 .issue-now-halo { animation: issue-now-pulse 2.4s ease-out infinite; }
 @keyframes issue-now-pulse {
   from { stroke-width: 5px;  opacity: 0.7; }
@@ -1565,16 +1570,18 @@ function renderIssueChart(series) {
     { label: '3yr', days: 1095 },
   ].filter(ms => ms.days < maxDays);
 
-  // Faint frame: hairlines at the plot's top, middle and bottom, plus a
-  // short tick under each milestone label and under "today".
+  // Faint half-pixel grid: horizontals at quarter heights, a full-height
+  // vertical at each milestone (running a few units past the plot as a tick
+  // under its label), and just a tick under "today", where the dots sit.
+  // Half a CSS pixel is one device pixel on a high-DPI screen.
   const gridLine = (x1, y1, x2, y2) =>
-    `<line class="issue-grid" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    `<line class="issue-grid" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
   document.getElementById('issueGrid').innerHTML =
-    [PAD, PAD + CH / 2, PAD + CH].map(y => gridLine(0, y, W, y)).join('')
-    + milestones.map(ms => logX(ms.days, maxDays, XW))
-        .concat(XW)
-        .map(x => gridLine(x.toFixed(1), PAD + CH, x.toFixed(1), PAD + CH + 4))
-        .join('');
+    [0, 0.25, 0.5, 0.75, 1].map(f => PAD + CH * f).map(y => gridLine(0, y, W, y)).join('')
+    + milestones.map(ms => logX(ms.days, maxDays, XW).toFixed(1))
+        .map(x => gridLine(x, PAD, x, PAD + CH + 4))
+        .join('')
+    + gridLine(XW.toFixed(1), PAD + CH, XW.toFixed(1), PAD + CH + 4);
 
   const spans = milestones.map(ms => {
     const pct = (logX(ms.days, maxDays, XW) / W * 100).toFixed(1);
