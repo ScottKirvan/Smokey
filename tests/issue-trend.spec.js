@@ -538,3 +538,113 @@ test.describe('renderIssueChart', () => {
     await expect(page.locator('#issueChartSvg')).toBeHidden();
   });
 });
+
+test.describe('issue chart sweep animation', () => {
+  // ~1 year of history, one active bug day near each end so there are
+  // needles on both sides of a mid-sweep front.
+  const series = {
+    days: ['2025-10-10', '2026-03-01', '2026-09-20'],
+    bugs:  [{ count: 2, opens: 2, closes: 0 }, { count: 2, opens: 0, closes: 0 }, { count: 4, opens: 3, closes: 1 }],
+    feats: [{ count: 1, opens: 1, closes: 0 }, { count: 1, opens: 0, closes: 0 }, { count: 1, opens: 0, closes: 0 }],
+    misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+    total: 7,
+  };
+  const state = page => page.evaluate(() => {
+    const svg = document.getElementById('issueChartSvg');
+    return {
+      sweeping: svg.classList.contains('issue-sweeping'),
+      front:    +document.getElementById('issueSweepRect').getAttribute('width'),
+      clipped:  document.getElementById('issueSweep').hasAttribute('clip-path'),
+      heads:    document.querySelectorAll('#issueHeads .issue-head').length,
+      hidden:   [...svg.querySelectorAll('.issue-candle')].filter(el => getComputedStyle(el).visibility === 'hidden').length,
+      needles:  svg.querySelectorAll('.issue-candle').length,
+    };
+  });
+
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install();
+    await gotoQuiet(page);
+    await page.clock.pauseAt(new Date(Date.now() + 60000));
+    await page.evaluate((series) => renderIssueChart(series), series);
+  });
+
+  test('rendering the chart on its own does not start a sweep', async ({ page }) => {
+    expect((await state(page)).sweeping).toBe(false);
+  });
+
+  test('reveals left to right with a dot riding each line, then ends with every needle visible', async ({ page }) => {
+    await page.evaluate(() => playIssueSweep());
+    await page.clock.runFor(400);
+    const mid = await state(page);
+    expect(mid.sweeping).toBe(true);
+    expect(mid.clipped).toBe(true);
+    expect(mid.front).toBeGreaterThan(0);
+    expect(mid.front).toBeLessThan(1000);
+    expect(mid.heads).toBe(3);
+    expect(mid.hidden).toBeGreaterThan(0);              // needles ahead of the front wait their turn
+    expect(mid.hidden).toBeLessThan(mid.needles);       // and ones behind it are already lit
+
+    await page.clock.runFor(1600);
+    const end = await state(page);
+    expect(end).toMatchObject({ sweeping: false, clipped: false, heads: 0, hidden: 0, front: 1000 });
+  });
+
+  test('the riding dots stay on their lines', async ({ page }) => {
+    await page.evaluate(() => playIssueSweep());
+    await page.clock.runFor(500);
+    const { heads, lines } = await page.evaluate(() => ({
+      heads: [...document.querySelectorAll('#issueHeads .issue-head')]
+        .map(h => h.getAttribute('d').match(/^M([\d.]+),([\d.]+)/).slice(1).map(Number)),
+      lines: issueSweepGeom.lines.map(l => l.pts),
+    }));
+    heads.forEach(([x, y], i) => {
+      const pts = lines[i];
+      const j = pts.findIndex(p => p[0] >= x);
+      const [x0, y0] = pts[Math.max(0, j - 1)], [x1, y1] = pts[j];
+      const expected = x1 === x0 ? y1 : y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+      expect(y).toBeCloseTo(expected, 1);
+    });
+  });
+
+  test('a click on the chart starts the sweep, and a click mid-sweep restarts it from the left', async ({ page }) => {
+    await page.locator('#issueChartSvg').click();
+    await page.clock.runFor(800);
+    const first = await state(page);
+    expect(first.sweeping).toBe(true);
+
+    await page.locator('#issueChartSvg').click();
+    await page.clock.runFor(100);
+    const restarted = await state(page);
+    expect(restarted.sweeping).toBe(true);
+    expect(restarted.front).toBeLessThan(first.front);
+  });
+
+  test('with reduced motion on, clicking does nothing', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.locator('#issueChartSvg').click();
+    await page.clock.runFor(100);
+    expect((await state(page)).sweeping).toBe(false);
+  });
+
+  test('a load plays one sweep on its first render with data, not again on the re-render after the fetch', async ({ page }) => {
+    const plays = await page.evaluate(async () => {
+      let plays = 0;
+      const real = window.playIssueSweep;
+      window.playIssueSweep = () => { plays++; real(); };
+      localStorage.setItem('rw_issues_v1', JSON.stringify({ 'o/a': { 1: { c: '2026-09-01T00:00:00Z', x: null, t: 'bug' } } }));
+      localStorage.removeItem('rw_sync_v1');
+      S.data = [{ full_name: 'o/a' }];
+      let page = 0;
+      window.fetch = async () => ({
+        ok: true, status: 200,
+        json: async () => (page++ === 0
+          ? [{ number: 2, created_at: '2026-09-15T00:00:00Z', closed_at: null, labels: [] }]
+          : []),
+      });
+      await loadIssueHistory();
+      window.playIssueSweep = real;
+      return plays;
+    });
+    expect(plays).toBe(1);
+  });
+});
