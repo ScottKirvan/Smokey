@@ -16,7 +16,8 @@
   --accent: #2f81f7; --accent-muted: rgba(47,129,247,0.1);
   --ext: #f85149; --ext-muted: rgba(248,81,73,0.10);
   --good: #3fb950; --warn: #d29922; --ice: #58d4e8;
-  --feat: #a2eeef; /* GitHub's default "enhancement" label color */
+  --feat: #3cc8cb; /* hue of GitHub's "enhancement" label (#a2eeef), darkened so the needles' white band shows */
+  --misc: #5f6670;
   --issue-blend: screen;
 }
 @media (prefers-color-scheme: light) {
@@ -27,7 +28,7 @@
     --accent: #0969da; --accent-muted: rgba(9,105,218,0.07);
     --ext: #cf222e; --ext-muted: rgba(207,34,46,0.07);
     --good: #1a7f37; --warn: #9a6700; --ice: #0891b2;
-    --feat: #12898b;
+    --feat: #12898b; --misc: #8c959f;
     --issue-blend: normal;
   }
 }
@@ -38,7 +39,7 @@
   --accent: #0969da; --accent-muted: rgba(9,105,218,0.07);
   --ext: #cf222e; --ext-muted: rgba(207,34,46,0.07);
   --good: #1a7f37; --warn: #9a6700; --ice: #0891b2;
-  --feat: #12898b;
+  --feat: #12898b; --misc: #8c959f;
   --issue-blend: normal;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -381,7 +382,7 @@ a.feed-label:hover { color: var(--text-muted); }
     <div class="issue-legend">
       <span class="legend-item"><span class="legend-swatch" style="background:var(--ext)"></span>Bugs</span>
       <span class="legend-item"><span class="legend-swatch" style="background:var(--feat)"></span>Feat</span>
-      <span class="legend-item"><span class="legend-swatch" style="background:var(--text-muted)"></span>Misc</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--misc)"></span>Misc</span>
     </div>
   </div>
   <div class="chart-wrap">
@@ -1547,7 +1548,7 @@ function renderIssueChart(series) {
   for (const [id, pts, color] of [
     ['Bug',  series.bugs,  'var(--ext)'],
     ['Feat', series.feats, 'var(--feat)'],
-    ['Misc', series.misc,  'var(--text-muted)'],
+    ['Misc', series.misc,  'var(--misc)'],
   ]) {
     document.getElementById(`i${id}Beads`).innerHTML = buildLine(pts, color) + buildCandles(pts, id, color);
     nowDots += buildNow(pts, color);
