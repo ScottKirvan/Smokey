@@ -44,7 +44,7 @@ test.describe('rowHTML lock icon', () => {
   const baseRepo = {
     full_name: 'owner/repo', pushed_at: '2026-01-01T00:00:00Z',
     open_prs: 0, external_prs: 0, open_issues: 0, external_issues: 0,
-    latest_release: null,
+    issue_split: { bug: 0, feat: 0, misc: 0 }, latest_release: null,
   };
 
   test('renders a lock icon for a private repo', async ({ page }) => {

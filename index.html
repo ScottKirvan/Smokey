@@ -266,6 +266,14 @@ tbody td:first-child { padding-left: 13px; }
 }
 .cnt-link:hover { color: var(--accent); }
 .cnt-link.zero { color: var(--text-dim); font-weight: 400; }
+.issue-split { white-space: nowrap; }
+.issue-split a { text-decoration: none; }
+.issue-split a:hover { text-decoration: underline; }
+.issue-split .ic-bug  { color: var(--bug-core); }
+.issue-split .ic-feat { color: var(--feat-core); }
+.issue-split .ic-misc { color: var(--misc-core); }
+.issue-split .zero    { color: var(--text-dim); font-weight: 400; }
+.issue-split .ic-sep  { color: var(--text-dim); font-weight: 400; margin: 0 1px; }
 
 /* CI status dot */
 .ci-dot {
@@ -668,11 +676,13 @@ async function fetchRepo(fullName, headers) {
     const isBot   = u => !u || u.type === 'Bot' || u.login?.endsWith('[bot]');
     const extPRs  = prs.filter(p => p.user?.login !== me && !isBot(p.user));
     const extI    = issues.filter(i => i.user?.login !== me && !isBot(i.user));
+    const issue_split = { bug: 0, feat: 0, misc: 0 };
+    for (const i of issues) issue_split[issueCategory((i.labels || []).map(l => l.name))]++;
     return {
       full_name: repo.full_name, pushed_at: repo.pushed_at, private: repo.private,
       latest_release: release?.tag_name ? release : null,
       open_prs: prs.length, external_prs: extPRs.length,
-      open_issues: issues.length, external_issues: extI.length,
+      open_issues: issues.length, external_issues: extI.length, issue_split,
     };
   } catch(e) { return { full_name: fullName, error: 'net' }; }
 }
@@ -899,9 +909,26 @@ function rowHTML(d) {
     </td>
     <td><span class="time-val ${timeClass(d.pushed_at)}">${relTimeStr(d.pushed_at)}</span></td>
     <td><a class="cnt-link ${d.open_prs===0?'zero':''}" href="https://github.com/${d.full_name}/pulls" target="_blank" rel="noopener">${d.open_prs}</a></td>
-    <td><a class="cnt-link ${d.open_issues===0?'zero':''}" href="https://github.com/${d.full_name}/issues" target="_blank" rel="noopener">${d.open_issues}</a></td>
+    <td>${issueSplitHTML(d)}</td>
     ${ciCellHTML(d)}
   </tr>`;
+}
+
+// Open issues as bugs/features/misc, colored like the issue chart. Each number
+// links to GitHub's matching filtered list; the queries mirror issueCategory()
+// (bug wins over enhancement, misc is neither).
+const ISSUE_SPLIT_QUERY = {
+  bug:  'is:issue is:open label:bug',
+  feat: 'is:issue is:open label:enhancement -label:bug',
+  misc: 'is:issue is:open -label:bug -label:enhancement',
+};
+function issueSplitHTML(d) {
+  const parts = ['bug', 'feat', 'misc'].map(cat => {
+    const n = d.issue_split[cat];
+    const href = `https://github.com/${d.full_name}/issues?q=${encodeURIComponent(ISSUE_SPLIT_QUERY[cat])}`;
+    return `<a class="ic-${cat}${n === 0 ? ' zero' : ''}" href="${href}" target="_blank" rel="noopener">${n}</a>`;
+  });
+  return `<span class="cnt-link issue-split" title="bugs / features / misc">${parts.join('<span class="ic-sep">/</span>')}</span>`;
 }
 
 const LOCK_ICON = '<svg class="lock-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6" rx="1"/><path d="M5.5 7V4.75a2.5 2.5 0 015 0V7"/></svg>';
@@ -1343,6 +1370,13 @@ const ISSUE_CACHE = 'rw_issues_v1';
 const ISSUE_SYNC  = 'rw_sync_v1';
 let   issueLoading = false;
 
+// The one bug/feature/misc rule, shared by the issue chart and the repo
+// table's Issues column so the two can't disagree.
+function issueCategory(labelNames) {
+  return labelNames.includes('bug') ? 'bug'
+       : labelNames.includes('enhancement') ? 'feat' : 'misc';
+}
+
 async function loadIssueHistory() {
   if (issueLoading) return;
   issueLoading = true;
@@ -1386,9 +1420,7 @@ async function loadIssueHistory() {
         if (!cache[repo]) cache[repo] = {};
         for (const item of items) {
           if (item.pull_request) continue;
-          const lbls = (item.labels || []).map(l => l.name);
-          const cat  = lbls.includes('bug') ? 'bug'
-                     : lbls.includes('enhancement') ? 'feat' : 'misc';
+          const cat = issueCategory((item.labels || []).map(l => l.name));
           cache[repo][item.number] = { c: item.created_at, x: item.closed_at, t: cat };
           changed = true;
         }
