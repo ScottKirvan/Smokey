@@ -115,6 +115,7 @@ header {
 }
 .legend-swatch { width:10px; height:2px; border-radius:1px; flex-shrink:0; }
 .issue-svg { height:80px !important; }
+#issueChartSvg { overflow: hidden; } /* taller diamonds clip at the chart edge instead of bleeding into the page */
 
 /* ── Attention badges ── */
 .attn-section {
@@ -371,6 +372,11 @@ a.feed-label:hover { color: var(--text-muted); }
   <div class="chart-wrap">
     <div class="chart-no-pat" id="issueMsg">Loading issue history…</div>
     <svg id="issueChartSvg" class="issue-svg" viewBox="0 0 1000 80" preserveAspectRatio="none" style="display:none">
+      <defs>
+        <filter id="issueGlowBlur" x="-200%" y="-200%" width="500%" height="500%">
+          <feGaussianBlur stdDeviation="1.5"/>
+        </filter>
+      </defs>
       <g id="iMiscBeads"></g>
       <g id="iFeatBeads"></g>
       <g id="iBugBeads"></g>
@@ -1354,10 +1360,20 @@ function buildIssueSeries(cache, monitoredRepos) {
 // Pixel width of a single calendar day at age `ago` (days before "now") on
 // the log-scaled x-axis described by `maxDays`/`W` — wide near "today",
 // compressed toward the left as history piles up.
+//
+// X_LOG_EPS shifts the log's argument away from a bare +1: log(x)'s slope
+// is steepest right at its start, so a +1 epsilon makes "today" alone (the
+// log(1)→log(2) step) eat a wildly disproportionate slice of the width —
+// over a multi-year history, ~9% of the whole chart for one day. +7 (a
+// week) lowers that initial slope so today tapers in alongside its
+// neighbors instead of dwarfing them, while the log curve still compresses
+// older history the same way.
+const X_LOG_EPS = 7;
+
 function dayWidth(ago, maxDays, W) {
-  const logMax = Math.log(maxDays + 1);
-  const x1 = W * (1 - Math.log(ago + 1) / logMax);
-  const x2 = W * (1 - Math.log(ago + 2) / logMax);
+  const logMax = Math.log(maxDays + X_LOG_EPS);
+  const x1 = W * (1 - Math.log(ago + X_LOG_EPS) / logMax);
+  const x2 = W * (1 - Math.log(ago + 1 + X_LOG_EPS) / logMax);
   return Math.abs(x1 - x2);
 }
 
@@ -1399,24 +1415,43 @@ function renderIssueChart(series) {
     ...series.misc.map(m  => Math.max(m.opens, m.closes)),
     1
   );
-  const MAX_LEN = CH * 0.65;
+  // 3x the base cap, and deliberately allowed to exceed the chart's own
+  // plot area — #issueChartSvg clips it at the SVG edge. A clipped diamond
+  // still reads by its taper alone (you can judge how far it was reaching
+  // from how slowly it narrows), so the clip itself carries no information
+  // loss, and a genuinely huge day now visually dominates the chart instead
+  // of being flattened down to fit.
+  const MAX_LEN = CH * 0.65 * 3;
 
   function xp(dateStr) {
     const ago = Math.max(0, (now - new Date(dateStr + 'T12:00:00Z').getTime()) / 86400000);
-    return Math.round(W * (1 - Math.log(ago + 1) / Math.log(maxDays + 1)));
+    return Math.round(W * (1 - Math.log(ago + X_LOG_EPS) / Math.log(maxDays + X_LOG_EPS)));
   }
   function yp(n) { return Math.round(PAD + CH - (n / maxCount) * CH); }
 
+  // The running-count line sits underneath the diamonds, at the same
+  // y0 = yp(count) position their white center anchors to — drawn across
+  // every day (not just active ones) so the overall trend still reads
+  // where no diamond is drawn. It's emitted first so later (diamond)
+  // markup paints on top of it within the same category group.
+  function buildLine(pts, color) {
+    const points = series.days
+      .map((day, i) => `${xp(day).toFixed(1)},${yp(pts[i].count).toFixed(2)}`)
+      .join(' ');
+    return `<polyline class="issue-line" points="${points}" fill="none" stroke="${color}" stroke-width="1" opacity="0.45"/>`;
+  }
+
   // Each candle is a vertical diamond/dart centered on y0 — the day's
-  // running open-issue count (same position the old connecting line sat
-  // at) — tapering to a point at both its top and bottom tips. It's at
-  // its widest exactly at y0, and fades from the category color to white
+  // running open-issue count (same position the connecting line sits at)
+  // — tapering to a point at both its top and bottom tips. It's at its
+  // widest exactly at y0, and fades from the category color to white
   // there, then back to color at the tips — white marks where "the line"
-  // would be; the color above/below shows how many issues opened/closed
-  // that day via a quadratic (not linear) length, so busy days dominate.
-  // The half-width at y0 is capped to the day's own plot slot (dayWidth,
-  // doubled) so a busy day far back in a long history can't visually
-  // smear across several neighboring days.
+  // is; the color above/below shows how many issues opened/closed that
+  // day via a quadratic (not linear) length, so busy days dominate. A
+  // small blurred white circle sits behind the white center for a soft
+  // glow. The half-width at y0 is capped to the day's own plot slot
+  // (dayWidth, doubled) so a busy day far back in a long history can't
+  // visually smear across several neighboring days.
   function buildCandles(pts, catId, color) {
     let out = '';
     for (let i = 0; i < series.days.length; i++) {
@@ -1431,8 +1466,9 @@ function renderIssueChart(series) {
       const bot  = Math.max(y0 + down, top + 0.5);
       const whiteOffset = (up / (up + down || 1)).toFixed(3);
 
-      const ago  = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
-      const slot = Math.min(10, dayWidth(ago, maxDays, W));
+      const ago   = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
+      const slot  = Math.min(10, dayWidth(ago, maxDays, W));
+      const glowR = Math.max(2, slot * 0.6);
       const gradId = `ig${catId}${i}`;
 
       const points = `${x.toFixed(1)},${top.toFixed(2)} `
@@ -1445,6 +1481,7 @@ function renderIssueChart(series) {
            +   `<stop offset="${whiteOffset}" style="stop-color:#fff"/>`
            +   `<stop offset="1" style="stop-color:${color}"/>`
            + `</linearGradient>`
+           + `<circle class="issue-glow" cx="${x.toFixed(1)}" cy="${y0.toFixed(2)}" r="${glowR.toFixed(1)}" fill="#fff" opacity="0.55" filter="url(#issueGlowBlur)"/>`
            + `<polygon class="issue-candle" points="${points}" fill="url(#${gradId})"/>`;
     }
     return out;
@@ -1455,7 +1492,7 @@ function renderIssueChart(series) {
     ['Feat', series.feats, 'var(--good)'],
     ['Misc', series.misc,  'var(--text-dim)'],
   ]) {
-    document.getElementById(`i${id}Beads`).innerHTML = buildCandles(pts, id, color);
+    document.getElementById(`i${id}Beads`).innerHTML = buildLine(pts, color) + buildCandles(pts, id, color);
   }
 
   // X-axis milestones at log-scaled positions
@@ -1466,7 +1503,7 @@ function renderIssueChart(series) {
   ].filter(ms => ms.days < maxDays);
 
   const spans = milestones.map(ms => {
-    const pct = ((W * (1 - Math.log(ms.days + 1) / Math.log(maxDays + 1))) / W * 100).toFixed(1);
+    const pct = ((W * (1 - Math.log(ms.days + X_LOG_EPS) / Math.log(maxDays + X_LOG_EPS))) / W * 100).toFixed(1);
     return `<span style="left:${pct}%">${ms.label}</span>`;
   });
   spans.push(`<span style="right:0">today</span>`);

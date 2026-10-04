@@ -1,17 +1,21 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
-// The issue trend chart has no connecting line between days. Each day with
-// activity gets its own candle: a diamond/dart shape centered on y0, the
-// day's running open-issue count (the same position a connecting line
-// would sit at) — widest at y0, tapering to a point at its top and bottom
-// tips. The candle fades from the category color to white exactly at y0,
-// then back to color at the tips — white marks where "the line" is; color
-// above/below shows how many issues opened (up) vs closed (down) that
-// day, via a quadratic (not linear) length so busy days dominate. This
-// isn't a standard chart type (not OHLC candlesticks, not a diverging bar
-// chart) — it's a one-off visualization built to show both "where the
-// count is" and "how much happened" in one mark per day.
+// The issue trend chart draws a thin connecting line across every day (the
+// running open-issue count), with one diamond/dart candle on top for each
+// day that had activity, painted over the line so the line reads as
+// underneath it. Each candle is centered on y0, the day's running count
+// (the same position the line sits at) — widest at y0, tapering to a
+// point at its top and bottom tips, with a small blurred glow behind that
+// white center. The candle fades from the category color to white exactly
+// at y0, then back to color at the tips — white marks where the line is;
+// color above/below shows how many issues opened (up) vs closed (down)
+// that day, via a quadratic (not linear) length so busy days dominate and
+// the tallest ones are allowed to clip at the chart's top/bottom edge
+// (the taper alone still reads how far they were reaching). This isn't a
+// standard chart type (not OHLC candlesticks, not a diverging bar chart)
+// — it's a one-off visualization built to show both "where the count is"
+// and "how much happened" in one mark per day.
 
 const issue = (c, x, t) => ({ c, x, t });
 
@@ -77,6 +81,14 @@ test.describe('dayWidth', () => {
     expect(today).toBeGreaterThan(aWeekAgo);
     expect(aWeekAgo).toBeGreaterThan(aYearAgo);
   });
+
+  test('today is not wildly wider than its neighbor, even over a multi-year history', async ({ page }) => {
+    // A bare log(ago+1) gives "today" a disproportionate jump (the
+    // log(1)->log(2) step dwarfs every later, flatter step) — over ~6
+    // years that was ~90px of a 1000px-wide chart for one day alone.
+    const [today, yesterday] = await page.evaluate(() => [dayWidth(0, 2190, 1000), dayWidth(1, 2190, 1000)]);
+    expect(today / yesterday).toBeLessThan(2);
+  });
 });
 
 test.describe('heatLen', () => {
@@ -120,6 +132,64 @@ test.describe('renderIssueChart', () => {
     await expect(page.locator('#iBugBeads polygon')).toHaveCount(2);
     await expect(page.locator('#iFeatBeads polygon')).toHaveCount(1); // only the first day has activity
     await expect(page.locator('#iMiscBeads polygon')).toHaveCount(0);
+  });
+
+  test('draws one connecting line per category, across every day including inactive ones', async ({ page }) => {
+    const series = {
+      days: ['2026-01-01', '2026-01-02', '2026-09-01'],
+      bugs:  [{ count: 2, opens: 2, closes: 0 }, { count: 2, opens: 0, closes: 0 }, { count: 4, opens: 3, closes: 1 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      total: 5,
+    };
+    const pointCount = await page.evaluate((series) => {
+      renderIssueChart(series);
+      return document.querySelector('#iBugBeads polyline').points.length;
+    }, series);
+    await expect(page.locator('#iBugBeads polyline')).toHaveCount(1);
+    expect(pointCount).toBe(3); // one point per day, not just the active ones
+  });
+
+  test('the line renders before (underneath) the diamonds in the same category group', async ({ page }) => {
+    const series = {
+      days: ['2026-06-01'],
+      bugs:  [{ count: 5, opens: 4, closes: 2 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }],
+      total: 1,
+    };
+    const tags = await page.evaluate((series) => {
+      renderIssueChart(series);
+      return [...document.querySelector('#iBugBeads').children].map(el => el.tagName.toLowerCase());
+    }, series);
+    expect(tags.indexOf('polyline')).toBeLessThan(tags.indexOf('polygon'));
+  });
+
+  test('draws a small blurred glow circle behind each candle, at its white center point', async ({ page }) => {
+    const series = {
+      days: ['2026-06-01'],
+      bugs:  [{ count: 5, opens: 4, closes: 2 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }],
+      total: 1,
+    };
+    const { glowCount, before, cx, cy } = await page.evaluate((series) => {
+      renderIssueChart(series);
+      const g = document.querySelector('#iBugBeads .issue-glow');
+      const children = [...document.querySelector('#iBugBeads').children];
+      return {
+        glowCount: document.querySelectorAll('#iBugBeads .issue-glow').length,
+        before: children.indexOf(g) < children.indexOf(document.querySelector('#iBugBeads polygon')),
+        cx: g.getAttribute('cx'),
+        cy: g.getAttribute('cy'),
+      };
+    }, series);
+    expect(glowCount).toBe(1);
+    expect(before).toBe(true); // glow sits underneath its own diamond
+    const polyPoints = await page.evaluate(() =>
+      [...document.querySelector('#iBugBeads polygon').points].map(p => ({ x: p.x, y: p.y })));
+    const y0 = polyPoints.find((p, i, arr) => arr.filter(q => q.y === p.y).length === 2).y; // the two side (white-center) points
+    expect(+cy).toBeCloseTo(y0, 0);
   });
 
   test('an opens-only day puts the white stop at the bottom (the bar extends purely upward from y0)', async ({ page }) => {
