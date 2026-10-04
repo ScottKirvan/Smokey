@@ -1453,7 +1453,7 @@ function heatLen(n, maxVal, maxLen) {
 // stop. Plays once per load() run and on any click on the chart. Skipped
 // entirely under prefers-reduced-motion. Everything it touches per frame is a
 // handful of elements (clip width, scanline, three dots), never the needles.
-const SWEEP_MS = 3000;
+const SWEEP_MS = 6000;
 let issueSweepGeom = null;   // { XW, unitsPerPx, lines: [{ core, pts: [[x, y], ...] }] } from the last render
 let issueSweepRaf = 0;
 

@@ -590,8 +590,8 @@ test.describe('issue chart sweep animation', () => {
   });
 
   test('reveals left to right behind a scanline with a dot riding each line, then cleans up', async ({ page }) => {
-    await page.evaluate(() => playIssueSweep());
-    await page.clock.runFor(1500);
+    const ms = await page.evaluate(() => { playIssueSweep(); return SWEEP_MS; });
+    await page.clock.runFor(ms / 2);
     const mid = await state(page);
     expect(mid).toMatchObject({ sweeping: true, clipped: true, heads: 3, scan: 2, svgAnims: 0 });
     // Constant speed: halfway through the time, halfway across. An ease-out
@@ -599,7 +599,7 @@ test.describe('issue chart sweep animation', () => {
     const XW = await page.evaluate(() => issueSweepGeom.XW);
     expect(mid.front / XW).toBeCloseTo(0.5, 1);
 
-    await page.clock.runFor(1600);
+    await page.clock.runFor(ms / 2 + 100);
     const end = await state(page);
     expect(end).toMatchObject({ sweeping: false, clipped: false, heads: 0, scan: 0, front: 1000, svgAnims: 0 });
   });
