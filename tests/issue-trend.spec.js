@@ -89,6 +89,14 @@ test.describe('dayWidth', () => {
     const [today, yesterday] = await page.evaluate(() => [dayWidth(0, 2190, 1000), dayWidth(1, 2190, 1000)]);
     expect(today / yesterday).toBeLessThan(2);
   });
+
+  test('logX puts today on the right edge and the oldest day on the left, with no dead space', async ({ page }) => {
+    // Shifting the log epsilon off +1 without re-normalizing put "today" at
+    // ~75% of the width, leaving the right quarter of the chart empty.
+    const [today, oldest] = await page.evaluate(() => [logX(0, 2190, 1000), logX(2190, 2190, 1000)]);
+    expect(today).toBeCloseTo(1000, 5);
+    expect(oldest).toBeCloseTo(0, 5);
+  });
 });
 
 test.describe('heatLen', () => {
@@ -222,12 +230,12 @@ test.describe('renderIssueChart', () => {
       misc:  [{ count: 0, opens: 0, closes: 0 }],
       total: 1,
     };
-    const stops = await page.evaluate((series) => {
+    const white = await page.evaluate((series) => {
       renderIssueChart(series);
-      return [...document.querySelector('#iBugBeads linearGradient').querySelectorAll('stop')]
-        .map(s => s.getAttribute('offset'));
+      return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
+        .find(s => s.getAttribute('style').includes('#fff')).getAttribute('offset');
     }, series);
-    expect(stops).toEqual(['0', '1.000', '1']);
+    expect(white).toBe('1.000');
   });
 
   test('a closes-only day puts the white stop at the top (the bar extends purely downward from y0)', async ({ page }) => {
@@ -238,12 +246,12 @@ test.describe('renderIssueChart', () => {
       misc:  [{ count: 0, opens: 0, closes: 0 }],
       total: 1,
     };
-    const stops = await page.evaluate((series) => {
+    const white = await page.evaluate((series) => {
       renderIssueChart(series);
-      return [...document.querySelector('#iBugBeads linearGradient').querySelectorAll('stop')]
-        .map(s => s.getAttribute('offset'));
+      return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
+        .find(s => s.getAttribute('style').includes('#fff')).getAttribute('offset');
     }, series);
-    expect(stops).toEqual(['0', '0.000', '1']);
+    expect(white).toBe('0.000');
   });
 
   test('equal opens and closes center the white stop in the middle of the bar', async ({ page }) => {
@@ -256,9 +264,32 @@ test.describe('renderIssueChart', () => {
     };
     const stop = await page.evaluate((series) => {
       renderIssueChart(series);
-      return document.querySelector('#iBugBeads linearGradient').querySelectorAll('stop')[1].getAttribute('offset');
+      return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
+        .find(s => s.getAttribute('style').includes('#fff')).getAttribute('offset');
     }, series);
     expect(stop).toBe('0.500');
+  });
+
+  test('full category color holds through the outer half of each side, keeping white a tight band at y0', async ({ page }) => {
+    const series = {
+      days: ['2026-06-01'],
+      bugs:  [{ count: 3, opens: 4, closes: 4 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }],
+      total: 1,
+    };
+    const stops = await page.evaluate((series) => {
+      renderIssueChart(series);
+      return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
+        .map(s => ({ offset: s.getAttribute('offset'), white: s.getAttribute('style').includes('#fff') }));
+    }, series);
+    expect(stops).toEqual([
+      { offset: '0',     white: false },
+      { offset: '0.250', white: false },
+      { offset: '0.500', white: true  },
+      { offset: '0.750', white: false },
+      { offset: '1',     white: false },
+    ]);
   });
 
   test('bar length scales quadratically with opens/closes, not linearly', async ({ page }) => {

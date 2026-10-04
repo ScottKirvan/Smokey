@@ -1370,11 +1370,16 @@ function buildIssueSeries(cache, monitoredRepos) {
 // older history the same way.
 const X_LOG_EPS = 7;
 
+// Normalized so ago=0 lands exactly on the right edge (W) and ago=maxDays on
+// the left (0). Without subtracting log(X_LOG_EPS), today would sit at
+// 1 - log(7)/log(maxDays+7) of the width, leaving dead space on the right.
+function logX(ago, maxDays, W) {
+  const lo = Math.log(X_LOG_EPS);
+  return W * (1 - (Math.log(ago + X_LOG_EPS) - lo) / (Math.log(maxDays + X_LOG_EPS) - lo));
+}
+
 function dayWidth(ago, maxDays, W) {
-  const logMax = Math.log(maxDays + X_LOG_EPS);
-  const x1 = W * (1 - Math.log(ago + X_LOG_EPS) / logMax);
-  const x2 = W * (1 - Math.log(ago + 1 + X_LOG_EPS) / logMax);
-  return Math.abs(x1 - x2);
+  return Math.abs(logX(ago, maxDays, W) - logX(ago + 1, maxDays, W));
 }
 
 // Quadratic, not linear — a busy day should read as dramatically more
@@ -1425,7 +1430,7 @@ function renderIssueChart(series) {
 
   function xp(dateStr) {
     const ago = Math.max(0, (now - new Date(dateStr + 'T12:00:00Z').getTime()) / 86400000);
-    return Math.round(W * (1 - Math.log(ago + X_LOG_EPS) / Math.log(maxDays + X_LOG_EPS)));
+    return Math.round(logX(ago, maxDays, W));
   }
   function yp(n) { return Math.round(PAD + CH - (n / maxCount) * CH); }
 
@@ -1438,7 +1443,7 @@ function renderIssueChart(series) {
     const points = series.days
       .map((day, i) => `${xp(day).toFixed(1)},${yp(pts[i].count).toFixed(2)}`)
       .join(' ');
-    return `<polyline class="issue-line" points="${points}" fill="none" stroke="${color}" stroke-width="1" opacity="0.45"/>`;
+    return `<polyline class="issue-line" points="${points}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.85"/>`;
   }
 
   // Each candle is a vertical diamond/dart centered on y0 — the day's
@@ -1464,7 +1469,12 @@ function renderIssueChart(series) {
       const down = heatLen(pt.closes, maxVal, MAX_LEN);
       const top  = y0 - up;
       const bot  = Math.max(y0 + down, top + 0.5);
-      const whiteOffset = (up / (up + down || 1)).toFixed(3);
+      // Full color holds through the outer half of each side, so the white
+      // stays a tight band at y0 instead of washing out the whole diamond.
+      const wo = up / (up + down || 1);
+      const whiteOffset = wo.toFixed(3);
+      const upperColorEnd   = (wo * 0.5).toFixed(3);
+      const lowerColorStart = (wo + (1 - wo) * 0.5).toFixed(3);
 
       const ago   = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
       const slot  = Math.min(10, dayWidth(ago, maxDays, W));
@@ -1478,7 +1488,9 @@ function renderIssueChart(series) {
 
       out += `<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">`
            +   `<stop offset="0" style="stop-color:${color}"/>`
+           +   `<stop offset="${upperColorEnd}" style="stop-color:${color}"/>`
            +   `<stop offset="${whiteOffset}" style="stop-color:#fff"/>`
+           +   `<stop offset="${lowerColorStart}" style="stop-color:${color}"/>`
            +   `<stop offset="1" style="stop-color:${color}"/>`
            + `</linearGradient>`
            + `<circle class="issue-glow" cx="${x.toFixed(1)}" cy="${y0.toFixed(2)}" r="${glowR.toFixed(1)}" fill="#fff" opacity="0.55" filter="url(#issueGlowBlur)"/>`
@@ -1503,7 +1515,7 @@ function renderIssueChart(series) {
   ].filter(ms => ms.days < maxDays);
 
   const spans = milestones.map(ms => {
-    const pct = ((W * (1 - Math.log(ms.days + X_LOG_EPS) / Math.log(maxDays + X_LOG_EPS))) / W * 100).toFixed(1);
+    const pct = (logX(ms.days, maxDays, W) / W * 100).toFixed(1);
     return `<span style="left:${pct}%">${ms.label}</span>`;
   });
   spans.push(`<span style="right:0">today</span>`);
