@@ -9,7 +9,7 @@ const { test, expect } = require('@playwright/test');
 // point at its top and bottom tips, with a small blurred glow behind its
 // center. The candle is the category's bright core color exactly at y0,
 // fading to its near-black tip color at both ends. The core marks where the
-// line is; the reach above/below shows how many issues opened (up) vs closed (down)
+// line is; the reach above/below shows how many issues closed (up) vs opened (down)
 // that day, via a quadratic (not linear) length so busy days dominate and
 // the tallest ones are allowed to clip at the chart's top/bottom edge
 // (the taper alone still reads how far they were reaching). This isn't a
@@ -369,36 +369,40 @@ test.describe('renderIssueChart', () => {
     expect(+cy).toBeCloseTo(y0, 0);
   });
 
-  test('an opens-only day puts the white stop at the bottom (the bar extends purely upward from y0)', async ({ page }) => {
-    const series = {
+  // Closes point up (fewer open issues), opens point down (more open issues).
+  const needleShape = (page, series) => page.evaluate((series) => {
+    renderIssueChart(series);
+    const pts = [...document.querySelector('#iBugBeads polygon').points].map(p => p.y);
+    const [top, y0, bot] = [pts[0], pts[1], pts[2]]; // top tip, right-mid (y0), bottom tip
+    const core = [...document.querySelectorAll('#iBugBeads linearGradient stop')]
+      .find(s => s.classList.contains('issue-core-stop')).getAttribute('offset');
+    return { up: y0 - top, down: bot - y0, core };
+  }, series);
+
+  test('an opens-only day points straight down from y0, with the core color at its top', async ({ page }) => {
+    const shape = await needleShape(page, {
       days: ['2026-06-01'],
       bugs:  [{ count: 5, opens: 1, closes: 0 }],
       feats: [{ count: 0, opens: 0, closes: 0 }],
       misc:  [{ count: 0, opens: 0, closes: 0 }],
       total: 1,
-    };
-    const white = await page.evaluate((series) => {
-      renderIssueChart(series);
-      return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
-        .find(s => s.classList.contains('issue-core-stop')).getAttribute('offset');
-    }, series);
-    expect(white).toBe('1.000');
+    });
+    expect(shape.down).toBeGreaterThan(1);
+    expect(shape.up).toBeLessThan(1);
+    expect(shape.core).toBe('0.000');
   });
 
-  test('a closes-only day puts the white stop at the top (the bar extends purely downward from y0)', async ({ page }) => {
-    const series = {
+  test('a closes-only day points straight up from y0, with the core color at its bottom', async ({ page }) => {
+    const shape = await needleShape(page, {
       days: ['2026-06-01'],
       bugs:  [{ count: 3, opens: 0, closes: 2 }],
       feats: [{ count: 0, opens: 0, closes: 0 }],
       misc:  [{ count: 0, opens: 0, closes: 0 }],
       total: 1,
-    };
-    const white = await page.evaluate((series) => {
-      renderIssueChart(series);
-      return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
-        .find(s => s.classList.contains('issue-core-stop')).getAttribute('offset');
-    }, series);
-    expect(white).toBe('0.000');
+    });
+    expect(shape.up).toBeGreaterThan(1);
+    expect(shape.down).toBe(0);
+    expect(shape.core).toBe('1.000');
   });
 
   test('equal opens and closes center the white stop in the middle of the bar', async ({ page }) => {

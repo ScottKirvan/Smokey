@@ -1611,8 +1611,8 @@ function renderIssueChart(series) {
 
       const x    = xp(day);
       const y0   = yp(pt.count);
-      const up   = heatLen(pt.opens,  maxVal, MAX_LEN);
-      const down = heatLen(pt.closes, maxVal, MAX_LEN);
+      const up   = heatLen(pt.closes, maxVal, MAX_LEN); // closes point up, opens point down
+      const down = heatLen(pt.opens,  maxVal, MAX_LEN);
       const top  = y0 - up;
       const bot  = Math.max(y0 + down, top + 0.5);
       // Full color holds through the outer half of each side, so the white
