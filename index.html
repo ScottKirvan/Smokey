@@ -1717,7 +1717,7 @@ function renderIssueChart(series) {
   xlbl.innerHTML = spans.join('');
 
   const yrs = (maxDays / 365);
-  rng.textContent = `· ${series.total} issues · ${yrs < 1 ? Math.round(yrs * 12) + 'mo' : (Math.round(yrs * 10) / 10) + 'yr'} history`;
+  rng.textContent = `· ${series.total} issues · ${yrs < 1 ? Math.round(yrs * 12) + 'mo' : (Math.round(yrs * 10) / 10) + 'yr'}`;
 }
 
 document.getElementById('issueChartSvg').addEventListener('click', playIssueSweep);

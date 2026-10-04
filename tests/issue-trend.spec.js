@@ -532,6 +532,17 @@ test.describe('renderIssueChart', () => {
     expect(Math.abs(mids[0].x - mids[1].x)).toBeGreaterThan(0); // and are spread apart in x
   });
 
+  test('the header reads "· N issues · span", without the word "history" that made it wrap on a phone', async ({ page }) => {
+    await page.evaluate(() => renderIssueChart({
+      days: ['2024-04-04', '2026-09-01'],
+      bugs:  [{ count: 1, opens: 1, closes: 0 }, { count: 2, opens: 1, closes: 0 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      total: 2,
+    }));
+    await expect(page.locator('#issueRange')).toHaveText(/^· 2 issues · \d+(\.\d)?yr$/);
+  });
+
   test('shows a message and hides the chart when there is no data', async ({ page }) => {
     await page.evaluate(() => renderIssueChart({ days: [], bugs: [], feats: [], misc: [], total: 0 }));
     await expect(page.locator('#issueMsg')).toHaveText('No issue data yet.');
