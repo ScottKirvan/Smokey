@@ -114,9 +114,6 @@ header {
   letter-spacing:0.04em; text-transform:uppercase; color:var(--text-dim);
 }
 .legend-swatch { width:10px; height:2px; border-radius:1px; flex-shrink:0; }
-#iBugLine  { stroke:var(--ext);      stroke-width:1.5; fill:none; stroke-linejoin:round; }
-#iFeatLine { stroke:var(--accent);   stroke-width:1.5; fill:none; stroke-linejoin:round; }
-#iMiscLine { stroke:var(--text-dim); stroke-width:1;   fill:none; stroke-linejoin:round; opacity:0.6; }
 #iBugBeads  { stroke:var(--ext);      opacity:0.55; }
 #iFeatBeads { stroke:var(--accent);   opacity:0.55; }
 #iMiscBeads { stroke:var(--text-dim); opacity:0.45; }
@@ -378,9 +375,9 @@ a.feed-label:hover { color: var(--text-muted); }
   <div class="chart-wrap">
     <div class="chart-no-pat" id="issueMsg">Loading issue history…</div>
     <svg id="issueChartSvg" class="issue-svg" viewBox="0 0 1000 80" preserveAspectRatio="none" style="display:none">
-      <path id="iMiscLine"/><g id="iMiscBeads"></g>
-      <path id="iFeatLine"/><g id="iFeatBeads"></g>
-      <path id="iBugLine"/><g id="iBugBeads"></g>
+      <g id="iMiscBeads"></g>
+      <g id="iFeatBeads"></g>
+      <g id="iBugBeads"></g>
     </svg>
     <div class="x-labels" id="issueXLabels" style="display:none"></div>
   </div>
@@ -1406,17 +1403,16 @@ function renderIssueChart(series) {
   }
   function yp(n) { return Math.round(PAD + CH - (n / maxCount) * CH); }
 
-  // A swell is a round-capped vertical stroke over the day's step, so its
-  // thickness beyond the line is the stroke width; the tiny length keeps a
-  // flat (net-zero) day drawable, since zero-length subpaths can be skipped.
+  // Each candlestick is a round-capped vertical stroke spanning the day's
+  // count change (or a near-zero stub for a flat day, so it still renders
+  // as a dot via the round cap); there is no connecting line between days.
   // Width is capped to that day's own slot (dayWidth) so a busy day far
   // back in a long history — where days are squeezed under a pixel apart —
   // can't visually smear across several neighboring days.
-  function buildPaths(pts) {
-    let line = `M0,${yp(0)}`, beads = '', prev = 0;
+  function buildBeads(pts) {
+    let beads = '', prev = 0;
     for (let i = 0; i < series.days.length; i++) {
       const day = series.days[i], x = xp(day), pt = pts[i];
-      line += ` H${x} V${yp(pt.count)}`;
       if (pt.churn > 0) {
         const top = yp(Math.max(prev, pt.count)), bot = Math.max(yp(Math.min(prev, pt.count)), top + 0.01);
         const ago = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
@@ -1425,13 +1421,11 @@ function renderIssueChart(series) {
       }
       prev = pt.count;
     }
-    return { line: line + ` H${W}`, beads };
+    return beads;
   }
 
   for (const [id, pts] of [['Bug', series.bugs], ['Feat', series.feats], ['Misc', series.misc]]) {
-    const p = buildPaths(pts);
-    document.getElementById(`i${id}Line`).setAttribute('d', p.line);
-    document.getElementById(`i${id}Beads`).innerHTML = p.beads;
+    document.getElementById(`i${id}Beads`).innerHTML = buildBeads(pts);
   }
 
   // X-axis milestones at log-scaled positions

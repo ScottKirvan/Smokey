@@ -1,10 +1,12 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
-// The issue trend chart thickens each line where activity happened, sized by
-// how many issues of that category were opened plus closed that day. A day
-// that opens and closes the same number of issues leaves the count flat, so
-// the swell is the only thing showing that the day was busy.
+// The issue trend chart has no connecting line between days — each day with
+// activity gets its own candlestick, a vertical stroke spanning that day's
+// count change, sized by how many issues of that category were opened plus
+// closed that day (churn). A day that opens and closes the same number of
+// issues leaves the count flat, so the candlestick's width is the only thing
+// showing that the day was busy.
 
 const issue = (c, x, t) => ({ c, x, t });
 
@@ -77,7 +79,7 @@ test.describe('churnStroke', () => {
     await gotoQuiet(page);
   });
 
-  test('a single event is visibly thicker than the 1.5px line', async ({ page }) => {
+  test('a single event still renders as a clearly visible stroke, not a hairline', async ({ page }) => {
     expect(await page.evaluate(() => churnStroke(1))).toBeGreaterThanOrEqual(4);
   });
 
@@ -134,12 +136,12 @@ test.describe('renderIssueChart', () => {
     expect(widths).toEqual(expected);
   });
 
-  // A flat day's swell is a near-zero-length stroke, so getBoundingClientRect()
-  // (which SVG reports geometry-only, no stroke/cap) is a single point — hit-
-  // test the painted stroke instead, offset from that point by just under
-  // half the swell's own stroke-width so the probe lands inside the round-
-  // cap's bulge but outside the 1.5px line underneath (same x, narrower).
-  test('a flat busy day still paints a swell around the line', async ({ page }) => {
+  // A flat day's candlestick is a near-zero-length stroke, so
+  // getBoundingClientRect() (which SVG reports geometry-only, no stroke/cap)
+  // is a single point — hit-test the painted stroke instead, offset from
+  // that point by just under half the stroke's own width so the probe lands
+  // inside the round cap's bulge rather than missing it entirely.
+  test('a flat busy day still paints a visible candlestick', async ({ page }) => {
     const series = {
       days: ['2026-01-01', '2026-09-01'],
       bugs:  [{ count: 1, churn: 1 }, { count: 1, churn: 20 }],
