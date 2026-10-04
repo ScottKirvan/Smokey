@@ -205,8 +205,10 @@ test.describe('renderIssueChart', () => {
     }
   });
 
-  test('draws a half-pixel grid: quarter-height horizontals, a vertical at each milestone, and a tick under today', async ({ page }) => {
-    // ~2 years of history: milestones at 1mo, 6mo, 1yr, plus today = 4 ticks.
+  test('draws a half-pixel graph-paper grid covering the whole svg, with major lines at the labels', async ({ page }) => {
+    // 2024-11-01 is ~700 days back: labeled milestones 1mo, 6mo, 1yr plus
+    // today are the majors; weeks 1-3 and months 2-5, 7-11 are the minors
+    // (yearly minors start at 4yr, beyond this history).
     const series = {
       days: ['2024-11-01', '2026-09-01'],
       bugs:  [{ count: 1, opens: 1, closes: 0 }, { count: 2, opens: 1, closes: 0 }],
@@ -214,20 +216,29 @@ test.describe('renderIssueChart', () => {
       misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
       total: 2,
     };
-    const { horizontal, ticks, labels } = await page.evaluate((series) => {
+    const g = await page.evaluate((series) => {
       renderIssueChart(series);
-      const lines = [...document.querySelectorAll('#issueGrid line')];
+      const all = sel => [...document.querySelectorAll(`#issueGrid ${sel}`)];
+      const vb = document.getElementById('issueChartSvg').viewBox.baseVal;
       return {
-        horizontal: lines.filter(l => l.getAttribute('y1') === l.getAttribute('y2')).length,
-        ticks:      lines.filter(l => l.getAttribute('x1') === l.getAttribute('x2')).length,
-        labels:     document.querySelectorAll('#issueXLabels span').length,
+        hY:      all('.issue-grid-h').map(l => +l.getAttribute('y1')),
+        hSpan:   all('.issue-grid-h').every(l => +l.getAttribute('x1') === 0 && +l.getAttribute('x2') === vb.width),
+        vSpan:   all('.issue-grid-major, .issue-grid-minor').every(l => +l.getAttribute('y1') === 0 && +l.getAttribute('y2') === vb.height),
+        majors:  all('.issue-grid-major').length,
+        minors:  all('.issue-grid-minor').length,
+        labels:  document.querySelectorAll('#issueXLabels span').length,
+        widths:  [...new Set(all('line').map(l => l.getAttribute('stroke-width')))],
+        height:  vb.height,
       };
     }, series);
-    expect(horizontal).toBe(5);   // quarter heights
-    expect(ticks).toBe(labels);   // one vertical per label, "today" included
-    const widths = await page.evaluate(() =>
-      [...new Set([...document.querySelectorAll('#issueGrid line')].map(l => l.getAttribute('stroke-width')))]);
-    expect(widths).toEqual(['0.5']);
+    expect(g.hY[0]).toBe(0);
+    expect(g.hY[g.hY.length - 1]).toBe(g.height); // top edge to bottom edge
+    expect(g.hY).toHaveLength(g.height / 10 + 1);
+    expect(g.hSpan).toBe(true);                   // left edge to right edge
+    expect(g.vSpan).toBe(true);                   // every vertical runs the full height
+    expect(g.majors).toBe(g.labels);              // one major per label, "today" included
+    expect(g.minors).toBe(3 + 9);
+    expect(g.widths).toEqual(['0.5']);
   });
 
   test('marks blend additively in dark mode and normally in light mode (screen would wash out to white)', async ({ page }) => {
