@@ -114,10 +114,6 @@ header {
   letter-spacing:0.04em; text-transform:uppercase; color:var(--text-dim);
 }
 .legend-swatch { width:10px; height:2px; border-radius:1px; flex-shrink:0; }
-#iBugBeads  { stroke:var(--ext);      opacity:0.55; }
-#iFeatBeads { stroke:var(--accent);   opacity:0.55; }
-#iMiscBeads { stroke:var(--text-dim); opacity:0.45; }
-.issue-bead { fill:none; stroke-linecap:round; vector-effect:non-scaling-stroke; }
 .issue-svg { height:80px !important; }
 
 /* ── Attention badges ── */
@@ -1331,15 +1327,14 @@ function buildIssueSeries(cache, monitoredRepos) {
   if (!issues.length) return null;
 
   const byDate = {};
-  function tally(ts, cat, delta) {
+  function bump(ts, cat, key) {
     const day = ts.slice(0, 10);
-    byDate[day] ??= { bug: { net: 0, churn: 0 }, feat: { net: 0, churn: 0 }, misc: { net: 0, churn: 0 } };
-    byDate[day][cat].net += delta;
-    byDate[day][cat].churn++;
+    byDate[day] ??= { bug: { opens: 0, closes: 0 }, feat: { opens: 0, closes: 0 }, misc: { opens: 0, closes: 0 } };
+    byDate[day][cat][key]++;
   }
   for (const i of issues) {
-    tally(i.c, i.t, 1);
-    if (i.x) tally(i.x, i.t, -1);
+    bump(i.c, i.t, 'opens');
+    if (i.x) bump(i.x, i.t, 'closes');
   }
 
   const days = Object.keys(byDate).sort();
@@ -1347,8 +1342,9 @@ function buildIssueSeries(cache, monitoredRepos) {
   const out  = { bug: [], feat: [], misc: [] };
   for (const day of days) {
     for (const cat of ['bug', 'feat', 'misc']) {
-      cur[cat] += byDate[day][cat].net;
-      out[cat].push({ count: cur[cat], churn: byDate[day][cat].churn });
+      const { opens, closes } = byDate[day][cat];
+      cur[cat] += opens - closes;
+      out[cat].push({ count: cur[cat], opens, closes });
     }
   }
 
@@ -1365,9 +1361,10 @@ function dayWidth(ago, maxDays, W) {
   return Math.abs(x1 - x2);
 }
 
-function churnStroke(churn, maxWidth = 12) {
-  const want = Math.round((2 + 2.2 * Math.sqrt(churn)) * 10) / 10;
-  return Math.min(want, maxWidth, 12);
+// Linear, not sqrt — a day's bar length should read as directly
+// proportional to its opens/closes count, not perceptually compressed.
+function heatLen(n, maxVal, maxLen) {
+  return (n / maxVal) * maxLen;
 }
 
 function renderIssueChart(series) {
@@ -1396,6 +1393,13 @@ function renderIssueChart(series) {
     ...series.misc.map(m  => m.count),
     1
   );
+  const maxVal = Math.max(
+    ...series.bugs.map(b  => Math.max(b.opens, b.closes)),
+    ...series.feats.map(f => Math.max(f.opens, f.closes)),
+    ...series.misc.map(m  => Math.max(m.opens, m.closes)),
+    1
+  );
+  const MAX_LEN = CH * 0.45;
 
   function xp(dateStr) {
     const ago = Math.max(0, (now - new Date(dateStr + 'T12:00:00Z').getTime()) / 86400000);
@@ -1403,29 +1407,48 @@ function renderIssueChart(series) {
   }
   function yp(n) { return Math.round(PAD + CH - (n / maxCount) * CH); }
 
-  // Each candlestick is a round-capped vertical stroke spanning the day's
-  // count change (or a near-zero stub for a flat day, so it still renders
-  // as a dot via the round cap); there is no connecting line between days.
-  // Width is capped to that day's own slot (dayWidth) so a busy day far
-  // back in a long history — where days are squeezed under a pixel apart —
-  // can't visually smear across several neighboring days.
-  function buildBeads(pts) {
-    let beads = '', prev = 0;
+  // Each candle is a rectangle centered on y0 — the day's running open-issue
+  // count (same position the old connecting line sat at). It fades from the
+  // category color to white exactly at y0, then back to color below —
+  // white marks where "the line" would be; the color above/below shows
+  // how many issues opened/closed that day via a linear (not sqrt) length.
+  // Width is capped to the day's own slot (dayWidth) so a busy day far back
+  // in a long history can't visually smear across several neighboring days.
+  function buildCandles(pts, catId, color) {
+    let out = '';
     for (let i = 0; i < series.days.length; i++) {
-      const day = series.days[i], x = xp(day), pt = pts[i];
-      if (pt.churn > 0) {
-        const top = yp(Math.max(prev, pt.count)), bot = Math.max(yp(Math.min(prev, pt.count)), top + 0.01);
-        const ago = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
-        const width = churnStroke(pt.churn, dayWidth(ago, maxDays, W));
-        beads += `<path class="issue-bead" d="M${x},${top} L${x},${bot}" stroke-width="${width}"/>`;
-      }
-      prev = pt.count;
+      const day = series.days[i], pt = pts[i];
+      if (pt.opens === 0 && pt.closes === 0) continue;
+
+      const x    = xp(day);
+      const y0   = yp(pt.count);
+      const up   = heatLen(pt.opens,  maxVal, MAX_LEN);
+      const down = heatLen(pt.closes, maxVal, MAX_LEN);
+      const top  = y0 - up;
+      const bot  = Math.max(y0 + down, top + 0.5);
+      const whiteOffset = (up / (up + down || 1)).toFixed(3);
+
+      const ago   = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
+      const width = Math.min(8, dayWidth(ago, maxDays, W));
+      const gradId = `ig${catId}${i}`;
+
+      out += `<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">`
+           +   `<stop offset="0" style="stop-color:${color}"/>`
+           +   `<stop offset="${whiteOffset}" style="stop-color:#fff"/>`
+           +   `<stop offset="1" style="stop-color:${color}"/>`
+           + `</linearGradient>`
+           + `<rect class="issue-candle" x="${(x - width / 2).toFixed(1)}" y="${top.toFixed(2)}" `
+           +   `width="${width.toFixed(1)}" height="${(bot - top).toFixed(2)}" fill="url(#${gradId})"/>`;
     }
-    return beads;
+    return out;
   }
 
-  for (const [id, pts] of [['Bug', series.bugs], ['Feat', series.feats], ['Misc', series.misc]]) {
-    document.getElementById(`i${id}Beads`).innerHTML = buildBeads(pts);
+  for (const [id, pts, color] of [
+    ['Bug',  series.bugs,  'var(--ext)'],
+    ['Feat', series.feats, 'var(--accent)'],
+    ['Misc', series.misc,  'var(--text-dim)'],
+  ]) {
+    document.getElementById(`i${id}Beads`).innerHTML = buildCandles(pts, id, color);
   }
 
   // X-axis milestones at log-scaled positions
