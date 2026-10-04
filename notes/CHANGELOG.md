@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/ScottKirvan/Smokey/compare/v0.4.0...v0.5.0) (2026-10-04)
+
+
+### Features
+
+* redesign issue-chart marks as white-centered heat gradients ([7c76bc9](https://github.com/ScottKirvan/Smokey/commit/7c76bc97d5c3f1fb30580799cc0e66047ac59816))
+
+
+### Bug Fixes
+
+* cap issue-chart swell width to the day's actual plot width ([5154ab3](https://github.com/ScottKirvan/Smokey/commit/5154ab3f882876c8073c158ec77b5dc6466dc174))
+* even out issue-chart x-axis, bigger clipped spikes, glow, and line back under diamonds ([bf8b862](https://github.com/ScottKirvan/Smokey/commit/bf8b8621041b08782e8f7f85d0289b95070c61bb))
+* remove issue-chart connecting line, render candlesticks only ([7e67977](https://github.com/ScottKirvan/Smokey/commit/7e679775680f070d39d419ffea2f62d44ecda86a))
+* scale issue-chart marks quadratically and shape them as tapered diamonds ([5a919c6](https://github.com/ScottKirvan/Smokey/commit/5a919c65782bfc8994d7861b67855d2cc51e67d8))
+
 ## [0.4.0](https://github.com/ScottKirvan/Smokey/compare/v0.3.0...v0.4.0) (2026-10-03)
 
 
