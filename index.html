@@ -16,8 +16,10 @@
   --accent: #2f81f7; --accent-muted: rgba(47,129,247,0.1);
   --ext: #f85149; --ext-muted: rgba(248,81,73,0.10);
   --good: #3fb950; --warn: #d29922; --ice: #58d4e8;
-  --feat: #3cc8cb; /* hue of GitHub's "enhancement" label (#a2eeef), darkened so the needles' white band shows */
-  --misc: #5f6670;
+  /* Issue chart: each category has a needle-center color (core), a tip color, and a line color between them */
+  --bug-core:  #ff00ff; --bug:  #2b0f12; --bug-line:  #4b1d6b;
+  --feat-core: #00ffff; --feat: #052b33; --feat-line: #0e4f5a;
+  --misc-core: #5a6069; --misc: #14181e; --misc-line: #3e4249;
   --issue-blend: screen;
 }
 @media (prefers-color-scheme: light) {
@@ -28,7 +30,7 @@
     --accent: #0969da; --accent-muted: rgba(9,105,218,0.07);
     --ext: #cf222e; --ext-muted: rgba(207,34,46,0.07);
     --good: #1a7f37; --warn: #9a6700; --ice: #0891b2;
-    --feat: #12898b; --misc: #8c959f;
+    --misc: #8c959f; --misc-line: #8c959f;
     --issue-blend: normal;
   }
 }
@@ -39,7 +41,7 @@
   --accent: #0969da; --accent-muted: rgba(9,105,218,0.07);
   --ext: #cf222e; --ext-muted: rgba(207,34,46,0.07);
   --good: #1a7f37; --warn: #9a6700; --ice: #0891b2;
-  --feat: #12898b; --misc: #8c959f;
+  --misc: #8c959f; --misc-line: #8c959f;
   --issue-blend: normal;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -380,9 +382,9 @@ a.feed-label:hover { color: var(--text-muted); }
   <div class="traffic-header">
     <span class="traffic-label">Issues <span class="traffic-range" id="issueRange"></span></span>
     <div class="issue-legend">
-      <span class="legend-item"><span class="legend-swatch" style="background:var(--ext)"></span>Bugs</span>
-      <span class="legend-item"><span class="legend-swatch" style="background:var(--feat)"></span>Feat</span>
-      <span class="legend-item"><span class="legend-swatch" style="background:var(--misc)"></span>Misc</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--bug-line)"></span>Bugs</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--feat-line)"></span>Feat</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--misc-line)"></span>Misc</span>
     </div>
   </div>
   <div class="chart-wrap">
@@ -1476,7 +1478,7 @@ function renderIssueChart(series) {
       .map((day, i) => `${xp(day).toFixed(1)},${yp(pts[i].count).toFixed(2)}`)
       .concat(`${XW.toFixed(1)},${yp(last).toFixed(2)}`)
       .join(' ');
-    return `<polyline class="issue-line-glow" points="${points}" fill="none" stroke="${color}" stroke-width="2" opacity="0.6" filter="url(#issueLineBlur)" vector-effect="non-scaling-stroke"/>`
+    return `<polyline class="issue-line-glow" points="${points}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.25" filter="url(#issueLineBlur)" vector-effect="non-scaling-stroke"/>`
          + `<polyline class="issue-line" points="${points}" fill="none" stroke="${color}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
   }
 
@@ -1501,7 +1503,7 @@ function renderIssueChart(series) {
   // visible smudge. The needle's half-width is a fixed few pixels, capped
   // to the day's own plot slot (dayWidth) so a busy day far back in a long
   // history can't visually smear across several neighboring days.
-  function buildCandles(pts, catId, color) {
+  function buildCandles(pts, catId, color, core) {
     let out = '';
     for (let i = 0; i < series.days.length; i++) {
       const day = series.days[i], pt = pts[i];
@@ -1534,24 +1536,25 @@ function renderIssueChart(series) {
       out += `<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">`
            +   `<stop offset="0" style="stop-color:${color}"/>`
            +   `<stop offset="${upperColorEnd}" style="stop-color:${color}"/>`
-           +   `<stop offset="${whiteOffset}" style="stop-color:#fff"/>`
+           +   `<stop class="issue-core-stop" offset="${whiteOffset}" style="stop-color:${core}"/>`
            +   `<stop offset="${lowerColorStart}" style="stop-color:${color}"/>`
            +   `<stop offset="1" style="stop-color:${color}"/>`
            + `</linearGradient>`
-           + `<circle class="issue-glow" cx="${x.toFixed(1)}" cy="${y0.toFixed(2)}" r="${glowR.toFixed(1)}" fill="#fff" opacity="0.55" filter="url(#issueGlowBlur)"/>`
+           + `<circle class="issue-glow" cx="${x.toFixed(1)}" cy="${y0.toFixed(2)}" r="${glowR.toFixed(1)}" fill="${core}" opacity="0.55" filter="url(#issueGlowBlur)"/>`
            + `<polygon class="issue-candle" points="${points}" fill="url(#${gradId})"/>`;
     }
     return out;
   }
 
   let nowDots = '';
-  for (const [id, pts, color] of [
-    ['Bug',  series.bugs,  'var(--ext)'],
-    ['Feat', series.feats, 'var(--feat)'],
-    ['Misc', series.misc,  'var(--misc)'],
+  for (const [id, pts, cat] of [
+    ['Bug',  series.bugs,  'bug'],
+    ['Feat', series.feats, 'feat'],
+    ['Misc', series.misc,  'misc'],
   ]) {
-    document.getElementById(`i${id}Beads`).innerHTML = buildLine(pts, color) + buildCandles(pts, id, color);
-    nowDots += buildNow(pts, color);
+    const tip = `var(--${cat})`, core = `var(--${cat}-core)`, line = `var(--${cat}-line)`;
+    document.getElementById(`i${id}Beads`).innerHTML = buildLine(pts, line) + buildCandles(pts, id, tip, core);
+    nowDots += buildNow(pts, line);
   }
   document.getElementById('issueNow').innerHTML = nowDots;
 

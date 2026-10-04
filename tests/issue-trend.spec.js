@@ -6,10 +6,10 @@ const { test, expect } = require('@playwright/test');
 // day that had activity, painted over the line so the line reads as
 // underneath it. Each candle is centered on y0, the day's running count
 // (the same position the line sits at) — widest at y0, tapering to a
-// point at its top and bottom tips, with a small blurred glow behind that
-// white center. The candle fades from the category color to white exactly
-// at y0, then back to color at the tips — white marks where the line is;
-// color above/below shows how many issues opened (up) vs closed (down)
+// point at its top and bottom tips, with a small blurred glow behind its
+// center. The candle is the category's bright core color exactly at y0,
+// fading to its near-black tip color at both ends. The core marks where the
+// line is; the reach above/below shows how many issues opened (up) vs closed (down)
 // that day, via a quadratic (not linear) length so busy days dominate and
 // the tallest ones are allowed to clip at the chart's top/bottom edge
 // (the taper alone still reads how far they were reaching). This isn't a
@@ -338,7 +338,7 @@ test.describe('renderIssueChart', () => {
     const white = await page.evaluate((series) => {
       renderIssueChart(series);
       return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
-        .find(s => s.getAttribute('style').includes('#fff')).getAttribute('offset');
+        .find(s => s.classList.contains('issue-core-stop')).getAttribute('offset');
     }, series);
     expect(white).toBe('1.000');
   });
@@ -354,7 +354,7 @@ test.describe('renderIssueChart', () => {
     const white = await page.evaluate((series) => {
       renderIssueChart(series);
       return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
-        .find(s => s.getAttribute('style').includes('#fff')).getAttribute('offset');
+        .find(s => s.classList.contains('issue-core-stop')).getAttribute('offset');
     }, series);
     expect(white).toBe('0.000');
   });
@@ -370,12 +370,12 @@ test.describe('renderIssueChart', () => {
     const stop = await page.evaluate((series) => {
       renderIssueChart(series);
       return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
-        .find(s => s.getAttribute('style').includes('#fff')).getAttribute('offset');
+        .find(s => s.classList.contains('issue-core-stop')).getAttribute('offset');
     }, series);
     expect(stop).toBe('0.500');
   });
 
-  test('full category color holds through the outer half of each side, keeping white a tight band at y0', async ({ page }) => {
+  test('full tip color holds through the outer half of each side, keeping the core color a tight band at y0', async ({ page }) => {
     const series = {
       days: ['2026-06-01'],
       bugs:  [{ count: 3, opens: 4, closes: 4 }],
@@ -386,15 +386,44 @@ test.describe('renderIssueChart', () => {
     const stops = await page.evaluate((series) => {
       renderIssueChart(series);
       return [...document.querySelectorAll('#iBugBeads linearGradient stop')]
-        .map(s => ({ offset: s.getAttribute('offset'), white: s.getAttribute('style').includes('#fff') }));
+        .map(s => ({ offset: s.getAttribute('offset'), color: s.getAttribute('style').replace('stop-color:', '') }));
     }, series);
     expect(stops).toEqual([
-      { offset: '0',     white: false },
-      { offset: '0.250', white: false },
-      { offset: '0.500', white: true  },
-      { offset: '0.750', white: false },
-      { offset: '1',     white: false },
+      { offset: '0',     color: 'var(--bug)' },
+      { offset: '0.250', color: 'var(--bug)' },
+      { offset: '0.500', color: 'var(--bug-core)' },
+      { offset: '0.750', color: 'var(--bug)' },
+      { offset: '1',     color: 'var(--bug)' },
     ]);
+  });
+
+  test('each category uses its own core color for the needle center and glow, and its line color for the line and today dot', async ({ page }) => {
+    const series = {
+      days: ['2026-06-01'],
+      bugs:  [{ count: 5, opens: 4, closes: 2 }],
+      feats: [{ count: 3, opens: 2, closes: 1 }],
+      misc:  [{ count: 1, opens: 1, closes: 1 }],
+      total: 3,
+    };
+    const got = await page.evaluate((series) => {
+      renderIssueChart(series);
+      const nowDots = [...document.querySelectorAll('#issueNow .issue-now:not(.issue-now-halo)')].map(d => d.getAttribute('stroke'));
+      return ['Bug', 'Feat', 'Misc'].map((id, i) => {
+        const g = document.getElementById(`i${id}Beads`);
+        return {
+          core: g.querySelector('.issue-core-stop').getAttribute('style'),
+          glow: g.querySelector('.issue-glow').getAttribute('fill'),
+          line: g.querySelector('.issue-line').getAttribute('stroke'),
+          now:  nowDots[i],
+        };
+      });
+    }, series);
+    expect(got).toEqual(['bug', 'feat', 'misc'].map(cat => ({
+      core: `stop-color:var(--${cat}-core)`,
+      glow: `var(--${cat}-core)`,
+      line: `var(--${cat}-line)`,
+      now:  `var(--${cat}-line)`,
+    })));
   });
 
   test('bar length scales quadratically with opens/closes, not linearly', async ({ page }) => {
