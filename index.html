@@ -389,7 +389,7 @@ a.feed-label:hover { color: var(--text-muted); }
           <feGaussianBlur stdDeviation="1.5"/>
         </filter>
         <filter id="issueLineBlur" filterUnits="userSpaceOnUse" x="-20" y="-20" width="1040" height="120">
-          <feGaussianBlur stdDeviation="1.6"/>
+          <feGaussianBlur stdDeviation="0.7"/>
         </filter>
       </defs>
       <g id="issueGrid"></g>
@@ -1472,7 +1472,7 @@ function renderIssueChart(series) {
       .map((day, i) => `${xp(day).toFixed(1)},${yp(pts[i].count).toFixed(2)}`)
       .concat(`${XW.toFixed(1)},${yp(last).toFixed(2)}`)
       .join(' ');
-    return `<polyline class="issue-line-glow" points="${points}" fill="none" stroke="${color}" stroke-width="3" opacity="0.6" filter="url(#issueLineBlur)" vector-effect="non-scaling-stroke"/>`
+    return `<polyline class="issue-line-glow" points="${points}" fill="none" stroke="${color}" stroke-width="2" opacity="0.6" filter="url(#issueLineBlur)" vector-effect="non-scaling-stroke"/>`
          + `<polyline class="issue-line" points="${points}" fill="none" stroke="${color}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
   }
 
