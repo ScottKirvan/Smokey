@@ -568,17 +568,23 @@ test.describe('issue chart sweep animation', () => {
     total: 7,
   };
   const state = page => page.evaluate(() => {
-    const svg = document.getElementById('issueChartSvg');
+    const plot = document.getElementById('issuePlot');
+    const svg  = document.getElementById('issueChartSvg');
+    const r = el => el.getBoundingClientRect();
+    const p = r(plot);
     return {
-      sweeping: svg.classList.contains('issue-sweeping'),
-      front:    +document.getElementById('issueSweepRect').getAttribute('width'),
-      clipped:  document.getElementById('issueSweep').hasAttribute('clip-path'),
-      heads:    document.querySelectorAll('#issueHeads .issue-head').length,
-      scan:     document.querySelectorAll('#issueHeads .issue-scan').length,
+      sweeping:  plot.classList.contains('issue-sweeping'),
+      front:     issueSweepFront,
+      // how far across the plot the reveal window currently ends (0..1)
+      revealed:  (Math.min(r(document.getElementById('issueReveal')).right, p.right) - p.left) / p.width,
+      // the marks themselves stay put on screen while the window slides
+      svgLeft:   r(svg).left - p.left,
+      heads:     document.querySelectorAll('#issueHeads .issue-head').length,
+      scan:      document.querySelectorAll('#issueHeads .issue-scan').length,
       // CSS animations running on anything inside the chart SVG. Per-needle
       // animations (hundreds) made the sweep stutter and, held on their final
       // frame, kept costing every frame after it ended, jittering the tickers.
-      svgAnims: document.getAnimations().filter(a => a.effect && a.effect.target && svg.contains(a.effect.target)).length,
+      svgAnims:  document.getAnimations().filter(a => a.effect && a.effect.target && svg.contains(a.effect.target)).length,
     };
   });
 
@@ -597,41 +603,69 @@ test.describe('issue chart sweep animation', () => {
     const ms = await page.evaluate(() => { playIssueSweep(); return SWEEP_MS; });
     await page.clock.runFor(ms / 2);
     const mid = await state(page);
-    expect(mid).toMatchObject({ sweeping: true, clipped: true, heads: 3, scan: 2, svgAnims: 0 });
+    expect(mid).toMatchObject({ sweeping: true, heads: 3, scan: 1, svgAnims: 0 });
     // Constant speed: halfway through the time, halfway across. An ease-out
     // used to cover two-thirds of the width in the first few frames.
     const XW = await page.evaluate(() => issueSweepGeom.XW);
     expect(mid.front / XW).toBeCloseTo(0.5, 1);
+    expect(mid.revealed).toBeCloseTo(mid.front / 1000, 2);
+    expect(Math.abs(mid.svgLeft)).toBeLessThan(0.5);
 
     await page.clock.runFor(ms / 2 + 100);
     const end = await state(page);
-    expect(end).toMatchObject({ sweeping: false, clipped: false, heads: 0, scan: 0, front: 1000, svgAnims: 0 });
+    expect(end).toMatchObject({ sweeping: false, front: null, heads: 0, scan: 0, svgAnims: 0 });
+    expect(end.revealed).toBeCloseTo(1, 2);
+    expect(Math.abs(end.svgLeft)).toBeLessThan(0.5);
+  });
+
+  test('nothing inside the chart SVG changes while it sweeps, so nothing has to be redrawn', async ({ page }) => {
+    // The first reveal widened an SVG clip every frame, which repainted
+    // everything revealed so far: cheap at the start, stuttering by the end.
+    // Now only transforms on the SVG element itself and its wrapper change.
+    await page.evaluate(() => {
+      const svg = document.getElementById('issueChartSvg');
+      window.__svgMutations = [];
+      new MutationObserver(list => list.forEach(m => {
+        if (m.target !== svg) window.__svgMutations.push(`${m.target.nodeName}.${m.attributeName || m.type}`);
+      })).observe(svg, { subtree: true, attributes: true, childList: true });
+      playIssueSweep();
+    });
+    for (let i = 0; i < 10; i++) await page.clock.runFor(300);
+    const { mutations, sweeping } = await page.evaluate(() => ({
+      mutations: window.__svgMutations,
+      sweeping: document.getElementById('issuePlot').classList.contains('issue-sweeping'),
+    }));
+    expect(sweeping).toBe(true); // still mid-sweep, so frames were running
+    expect(mutations).toEqual([]);
   });
 
   test('the riding dots stay on their lines', async ({ page }) => {
     await page.evaluate(() => playIssueSweep());
-    await page.clock.runFor(500);
-    const { heads, lines } = await page.evaluate(() => ({
-      heads: [...document.querySelectorAll('#issueHeads .issue-head')]
-        .map(h => h.getAttribute('d').match(/^M([\d.]+),([\d.]+)/).slice(1).map(Number)),
+    await page.clock.runFor(1500);
+    const { dots, front, lines, plotW } = await page.evaluate(() => ({
+      dots: [...document.querySelectorAll('#issueHeads .issue-head')]
+        .map(h => h.style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/).slice(1).map(Number)),
+      front: issueSweepFront,
       lines: issueSweepGeom.lines.map(l => l.pts),
+      plotW: document.getElementById('issuePlot').getBoundingClientRect().width,
     }));
-    heads.forEach(([x, y], i) => {
+    dots.forEach(([x, y], i) => {
+      expect(x).toBeCloseTo(front / 1000 * plotW, 1);
       const pts = lines[i];
-      const j = pts.findIndex(p => p[0] >= x);
+      const j = pts.findIndex(p => p[0] >= front);
       const [x0, y0] = pts[Math.max(0, j - 1)], [x1, y1] = pts[j];
-      const expected = x1 === x0 ? y1 : y0 + (y1 - y0) * (x - x0) / (x1 - x0);
-      expect(y).toBeCloseTo(expected, 1);
+      const expected = x1 === x0 ? y1 : y0 + (y1 - y0) * (front - x0) / (x1 - x0);
+      expect(y).toBeCloseTo(expected, 1); // 1 viewBox unit = 1px vertically
     });
   });
 
   test('a click on the chart starts the sweep, and a click mid-sweep restarts it from the left', async ({ page }) => {
-    await page.locator('#issueChartSvg').click();
+    await page.locator('#issuePlot').click();
     await page.clock.runFor(800);
     const first = await state(page);
     expect(first.sweeping).toBe(true);
 
-    await page.locator('#issueChartSvg').click();
+    await page.locator('#issuePlot').click();
     await page.clock.runFor(100);
     const restarted = await state(page);
     expect(restarted.sweeping).toBe(true);
@@ -640,7 +674,7 @@ test.describe('issue chart sweep animation', () => {
 
   test('with reduced motion on, clicking does nothing', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.locator('#issueChartSvg').click();
+    await page.locator('#issuePlot').click();
     await page.clock.runFor(100);
     expect((await state(page)).sweeping).toBe(false);
   });
