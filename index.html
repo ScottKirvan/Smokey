@@ -171,7 +171,7 @@ header {
   background: currentColor; box-shadow: 0 0 0 3.5px color-mix(in srgb, currentColor 35%, transparent);
   will-change: transform;
 }
-@media (prefers-reduced-motion: no-preference) { #issuePlot { cursor: pointer; } }
+@media (prefers-reduced-motion: no-preference) { #issuePlot:not(.sweep-off) { cursor: pointer; } }
 
 /* ── Attention badges ── */
 .attn-section {
@@ -528,6 +528,10 @@ a.feed-label:hover { color: var(--text-muted); }
       <input type="checkbox" id="showNotifsToggle">
       <span class="toggle-label">Show unread notifications (requires classic PAT with notifications scope)</span>
     </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="sweepAnimToggle">
+      <span class="toggle-label">Animate the issue chart (on load, and when clicked)</span>
+    </label>
     <button class="save-btn" onclick="saveConfig()">Save &amp; Refresh</button>
   </div>
 </div>
@@ -546,6 +550,7 @@ const S = {
   data: [], loadedAt: null,
   showFeed: false, feedItems: [], feedEtag: '', feedPollTimer: null,
   showNotifs: false, notifItems: [], notifLastModified: '', notifPollTimer: null,
+  sweepAnim: true,
   rateLimit: null,
 };
 
@@ -558,12 +563,14 @@ function init() {
     S.showOrg  = localStorage.getItem('rw_show_org') === '1';
     S.showFeed = localStorage.getItem('rw_feed') === '1';
     S.showNotifs = localStorage.getItem('rw_notifs') === '1';
+    S.sweepAnim  = localStorage.getItem('rw_sweep_anim') !== '0'; // on unless explicitly turned off
     const savedSortBy = localStorage.getItem('rw_sort_by');
     if (COLS.includes(savedSortBy)) S.sortBy = savedSortBy;
     const savedSortDir = localStorage.getItem('rw_sort_dir');
     if (savedSortDir === 'asc' || savedSortDir === 'desc') S.sortDir = savedSortDir;
   } catch(e) { S.repos = DEFAULT_REPOS.slice(); }
   updateSortHeaders();
+  applySweepSetting();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   setInterval(updateSummaryTime, 60000);
   load();
@@ -986,6 +993,7 @@ function openConfig() {
   document.getElementById('showOrgToggle').checked  = S.showOrg;
   document.getElementById('showFeedToggle').checked = S.showFeed;
   document.getElementById('showNotifsToggle').checked = S.showNotifs;
+  document.getElementById('sweepAnimToggle').checked = S.sweepAnim;
   document.getElementById('configOverlay').classList.add('open');
 }
 function closeConfig() { document.getElementById('configOverlay').classList.remove('open'); }
@@ -996,18 +1004,22 @@ function saveConfig() {
   const showOrg  = document.getElementById('showOrgToggle').checked;
   const showFeed = document.getElementById('showFeedToggle').checked;
   const showNotifs = document.getElementById('showNotifsToggle').checked;
+  const sweepAnim  = document.getElementById('sweepAnimToggle').checked;
   try {
     localStorage.setItem('rw_pat',      newPat);
     localStorage.setItem('rw_repos',    newRepos.join('\n'));
     localStorage.setItem('rw_show_org', showOrg  ? '1' : '0');
     localStorage.setItem('rw_feed',     showFeed ? '1' : '0');
     localStorage.setItem('rw_notifs',   showNotifs ? '1' : '0');
+    localStorage.setItem('rw_sweep_anim', sweepAnim ? '1' : '0');
   } catch(e) {}
   stopFeedPoll();  // always clear before potentially re-starting
   stopNotifPoll();
   if (!showFeed) document.getElementById('feedSection').style.display = 'none';
   if (!showNotifs) document.getElementById('notifSection').style.display = 'none';
   S.pat = newPat; S.repos = newRepos; S.showOrg = showOrg; S.showFeed = showFeed; S.showNotifs = showNotifs;
+  S.sweepAnim = sweepAnim;
+  applySweepSetting();
   S.currentUser = ''; S.data = [];
   closeConfig();
   load();
@@ -1497,8 +1509,15 @@ function stopIssueSweep() {
   document.getElementById('issueHeads').innerHTML = '';
 }
 
+// The "Animate the issue chart" setting: off stops any sweep in progress and
+// drops the pointer cursor, since a click no longer does anything.
+function applySweepSetting() {
+  document.getElementById('issuePlot').classList.toggle('sweep-off', !S.sweepAnim);
+  if (!S.sweepAnim) stopIssueSweep();
+}
+
 function playIssueSweep() {
-  if (!issueSweepGeom || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!S.sweepAnim || !issueSweepGeom || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   stopIssueSweep();
   const plot   = document.getElementById('issuePlot');
   const reveal = document.getElementById('issueReveal');

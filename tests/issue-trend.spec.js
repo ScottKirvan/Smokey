@@ -701,3 +701,65 @@ test.describe('issue chart sweep animation', () => {
     expect(plays).toBe(1);
   });
 });
+
+test.describe('issue chart animation setting', () => {
+  const series = {
+    days: ['2025-10-10', '2026-09-20'],
+    bugs:  [{ count: 2, opens: 2, closes: 0 }, { count: 4, opens: 3, closes: 1 }],
+    feats: [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+    misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+    total: 6,
+  };
+  const sweeping = page => page.evaluate(() => document.getElementById('issuePlot').classList.contains('issue-sweeping'));
+
+  test.beforeEach(async ({ page }) => {
+    await gotoQuiet(page);
+  });
+
+  test('defaults to on, and the Settings toggle shows it', async ({ page }) => {
+    const { stored, on, checked } = await page.evaluate(() => {
+      openConfig();
+      return {
+        stored: localStorage.getItem('rw_sweep_anim'),
+        on: S.sweepAnim,
+        checked: document.getElementById('sweepAnimToggle').checked,
+      };
+    });
+    expect(stored).toBeNull();
+    expect(on).toBe(true);
+    expect(checked).toBe(true);
+  });
+
+  test('turned off in Settings, neither a click nor a load plays it, and the pointer cursor goes away', async ({ page }) => {
+    await page.evaluate(() => {
+      openConfig();
+      document.getElementById('sweepAnimToggle').checked = false;
+      saveConfig();
+    });
+    await page.waitForFunction(() => !document.getElementById('refreshBtn').classList.contains('spinning') && !issueLoading);
+    expect(await page.evaluate(() => [localStorage.getItem('rw_sweep_anim'), S.sweepAnim])).toEqual(['0', false]);
+
+    await page.evaluate((series) => renderIssueChart(series), series);
+    await page.locator('#issuePlot').click();
+    expect(await sweeping(page)).toBe(false);
+    await page.evaluate(() => playIssueSweep()); // what loadIssueHistory calls on a load
+    expect(await sweeping(page)).toBe(false);
+    expect(await page.evaluate(() => getComputedStyle(document.getElementById('issuePlot')).cursor)).not.toBe('pointer');
+  });
+
+  test('turning it off mid-sweep stops the sweep', async ({ page }) => {
+    await page.evaluate((series) => { renderIssueChart(series); playIssueSweep(); }, series);
+    expect(await sweeping(page)).toBe(true);
+    // Applied directly rather than via saveConfig(), whose reload would stop
+    // the sweep on its own and hide whether the setting does.
+    await page.evaluate(() => { S.sweepAnim = false; applySweepSetting(); });
+    expect(await sweeping(page)).toBe(false);
+  });
+
+  test('off survives a reload', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('rw_sweep_anim', '0'));
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById('refreshBtn').classList.contains('spinning') && !issueLoading);
+    expect(await page.evaluate(() => S.sweepAnim)).toBe(false);
+  });
+});
