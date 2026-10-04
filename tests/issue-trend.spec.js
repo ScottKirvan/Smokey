@@ -150,6 +150,28 @@ test.describe('renderIssueChart', () => {
     expect(pointCount).toBe(3); // one point per day, not just the active ones
   });
 
+  test('the chart clips overflowing candles at its own box instead of letting them bleed into the page', async ({ page }) => {
+    const overflow = await page.evaluate(() => getComputedStyle(document.getElementById('issueChartSvg')).overflow);
+    expect(overflow).toBe('hidden');
+  });
+
+  test('a day whose reach vastly exceeds the chart is not geometrically clamped — it relies on the svg clipping to cut it', async ({ page }) => {
+    const series = {
+      days: ['2026-09-30', '2026-10-01'],
+      bugs:  [{ count: 50, opens: 0, closes: 0 }, { count: 50, opens: 100, closes: 100 }],
+      feats: [{ count: 0, opens: 0, closes: 0 },  { count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 },  { count: 0, opens: 0, closes: 0 }],
+      total: 2,
+    };
+    const pts = await page.evaluate((series) => {
+      renderIssueChart(series);
+      return [...document.querySelector('#iBugBeads polygon').points].map(p => ({ x: p.x, y: p.y }));
+    }, series);
+    const ys = pts.map(p => p.y);
+    expect(Math.min(...ys)).toBeLessThan(0);    // top tip genuinely above the chart's own 0..80 viewBox
+    expect(Math.max(...ys)).toBeGreaterThan(80); // bottom tip genuinely below it
+  });
+
   test('the line renders before (underneath) the diamonds in the same category group', async ({ page }) => {
     const series = {
       days: ['2026-06-01'],
