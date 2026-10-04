@@ -142,7 +142,7 @@ test.describe('renderIssueChart', () => {
     await expect(page.locator('#iMiscBeads polygon')).toHaveCount(0);
   });
 
-  test('draws one connecting line per category, across every day including inactive ones', async ({ page }) => {
+  test('draws one connecting line per category, across every day including inactive ones, held flat to today', async ({ page }) => {
     const series = {
       days: ['2026-01-01', '2026-01-02', '2026-09-01'],
       bugs:  [{ count: 2, opens: 2, closes: 0 }, { count: 2, opens: 0, closes: 0 }, { count: 4, opens: 3, closes: 1 }],
@@ -150,12 +150,117 @@ test.describe('renderIssueChart', () => {
       misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
       total: 5,
     };
-    const pointCount = await page.evaluate((series) => {
+    const pts = await page.evaluate((series) => {
       renderIssueChart(series);
-      return document.querySelector('#iBugBeads polyline').points.length;
+      return [...document.querySelector('#iBugBeads .issue-line').points].map(p => ({ x: p.x, y: p.y }));
     }, series);
-    await expect(page.locator('#iBugBeads polyline')).toHaveCount(1);
-    expect(pointCount).toBe(3); // one point per day, not just the active ones
+    await expect(page.locator('#iBugBeads .issue-line')).toHaveCount(1);
+    expect(pts).toHaveLength(4); // one point per day, plus the hold to today
+    const [lastDay, today] = pts.slice(-2);
+    expect(today.y).toBe(lastDay.y);        // the count holds flat until today
+    expect(today.x).toBeGreaterThan(lastDay.x);
+  });
+
+  test('the line has a blurred glow copy underneath it, and both keep a fixed pixel width', async ({ page }) => {
+    const series = {
+      days: ['2026-06-01'],
+      bugs:  [{ count: 5, opens: 4, closes: 2 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }],
+      total: 1,
+    };
+    const lines = await page.evaluate((series) => {
+      renderIssueChart(series);
+      return [...document.querySelectorAll('#iBugBeads polyline')].map(l => ({
+        cls: l.getAttribute('class'), filter: l.getAttribute('filter'), ve: l.getAttribute('vector-effect'),
+      }));
+    }, series);
+    expect(lines).toEqual([
+      { cls: 'issue-line-glow', filter: 'url(#issueLineBlur)', ve: 'non-scaling-stroke' },
+      { cls: 'issue-line',      filter: null,                  ve: 'non-scaling-stroke' },
+    ]);
+  });
+
+  test('puts a "today" dot at the right-hand end of each category line', async ({ page }) => {
+    const series = {
+      days: ['2026-06-01'],
+      bugs:  [{ count: 5, opens: 4, closes: 2 }],
+      feats: [{ count: 2, opens: 2, closes: 0 }],
+      misc:  [{ count: 1, opens: 1, closes: 0 }],
+      total: 7,
+    };
+    const { dots, lineEnds } = await page.evaluate((series) => {
+      renderIssueChart(series);
+      const dots = [...document.querySelectorAll('#issueNow .issue-now:not(.issue-now-halo)')]
+        .map(d => d.getAttribute('d').match(/^M([\d.]+),([\d.]+)/).slice(1).map(Number));
+      const lineEnds = ['iBugBeads', 'iFeatBeads', 'iMiscBeads'].map(id => {
+        const p = [...document.querySelector(`#${id} .issue-line`).points].pop();
+        return [p.x, p.y];
+      });
+      return { dots, lineEnds };
+    }, series);
+    expect(dots).toHaveLength(3);
+    for (const end of lineEnds) {
+      expect(dots.some(([x, y]) => Math.abs(x - end[0]) < 0.1 && Math.abs(y - end[1]) < 0.1)).toBe(true);
+    }
+  });
+
+  test('draws faint gridlines plus a tick under each milestone label and under today', async ({ page }) => {
+    // ~2 years of history: milestones at 1mo, 6mo, 1yr, plus today = 4 ticks.
+    const series = {
+      days: ['2024-11-01', '2026-09-01'],
+      bugs:  [{ count: 1, opens: 1, closes: 0 }, { count: 2, opens: 1, closes: 0 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      total: 2,
+    };
+    const { horizontal, ticks, labels } = await page.evaluate((series) => {
+      renderIssueChart(series);
+      const lines = [...document.querySelectorAll('#issueGrid line')];
+      return {
+        horizontal: lines.filter(l => l.getAttribute('y1') === l.getAttribute('y2')).length,
+        ticks:      lines.filter(l => l.getAttribute('x1') === l.getAttribute('x2')).length,
+        labels:     document.querySelectorAll('#issueXLabels span').length,
+      };
+    }, series);
+    expect(horizontal).toBe(3);
+    expect(ticks).toBe(labels); // one tick per label, "today" included
+  });
+
+  test('marks blend additively in dark mode and normally in light mode (screen would wash out to white)', async ({ page }) => {
+    const series = {
+      days: ['2026-06-01'],
+      bugs:  [{ count: 5, opens: 4, closes: 2 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }],
+      total: 1,
+    };
+    const blend = () => page.evaluate(() =>
+      getComputedStyle(document.querySelector('#iBugBeads .issue-candle')).mixBlendMode);
+    await page.evaluate((series) => renderIssueChart(series), series);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    expect(await blend()).toBe('screen');
+    await page.emulateMedia({ colorScheme: 'light' });
+    expect(await blend()).toBe('normal');
+  });
+
+  test('needles are a fixed few pixels wide at their center, not the full day slot', async ({ page }) => {
+    // The most recent day has a wide slot on the log axis; the needle should
+    // still be thin. 2.5px half-width -> ~5px across, whatever the stretch.
+    const series = {
+      days: ['2026-01-01', new Date(Date.now() - 86400000).toISOString().slice(0, 10)],
+      bugs:  [{ count: 1, opens: 1, closes: 0 }, { count: 3, opens: 2, closes: 0 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      total: 3,
+    };
+    const px = await page.evaluate((series) => {
+      renderIssueChart(series);
+      const needle = [...document.querySelectorAll('#iBugBeads polygon')].pop();
+      return needle.getBoundingClientRect().width;
+    }, series);
+    expect(px).toBeGreaterThan(4);
+    expect(px).toBeLessThan(6);
   });
 
   test('the chart clips overflowing candles at its own box instead of letting them bleed into the page', async ({ page }) => {
