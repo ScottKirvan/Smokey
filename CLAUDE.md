@@ -20,6 +20,8 @@ Playwright Test drives the real `index.html` in a headless browser — no build 
 
 `tests/lint-repo-matching.spec.js` is a static source-text check, not a behavioral test — it `fs.readFileSync`s `index.html` and asserts the raw `S.repos` config strings are never compared directly against a GitHub-resolved canonical name (see **Repo-rename matching** below). Recurred three times across three different functions before this guard existed; keep it in mind as the model for any other "this pattern keeps recurring" bug class.
 
+**Startup-load race:** `init()` calls `load()` on every `page.goto('/index.html')`, firing real, unmocked fetches (repo data, traffic CSV, issue history) in the background. A test that manually mocks `window.fetch` and renders something can finish its assertions before that background `load()` settles — when it does settle, it silently overwrites the test's render with whatever the real (or aborted) network calls returned. `gotoQuiet(page)` — block `api.github.com`/`raw.githubusercontent.com` via `page.route(...).abort()`, then `page.goto()`, then `waitForFunction` for the refresh spinner (and `!issueLoading`, where relevant) to clear — closes that race before a test's own setup runs. Defined independently in each spec file that needs it (`traffic-history.spec.js`, `issue-trend.spec.js`, `issue-sync.spec.js`); `traffic-history.spec.js` was missing it until a CI run surfaced the exact symptom (a mocked "10 views" assertion seeing real live traffic-log data instead) — worth adding to any new spec file that mocks `window.fetch` and goes straight to `page.goto`.
+
 ### State model
 
 All runtime state lives in a single `S` object at the top of the inline script:

@@ -110,23 +110,31 @@ test.describe('renderIssueChart', () => {
       misc:  [{ count: 0, churn: 0 }, { count: 0, churn: 0 }],
       total: 13,
     };
-    // Render and compute the expected per-day cap in the same evaluate()
-    // call, sharing one Date.now() — doing it in two round-trips drifts by
-    // the IPC gap between them, enough to flip the sub-pixel log-axis math.
+    // Stub Date.now to one fixed instant so renderIssueChart()'s internal
+    // "now" and this test's own expected-width computation can't drift —
+    // even reading Date.now() twice in the same evaluate() call can land on
+    // either side of a millisecond tick often enough to flip the sub-pixel
+    // log-axis math (seen in CI, not just local runs).
     const { widths, expected } = await page.evaluate((series) => {
-      const now = Date.now();
-      renderIssueChart(series);
-      const widths = [...document.querySelectorAll('#iBugBeads path')]
-        .map(p => +p.getAttribute('stroke-width'));
+      const fixedNow = Date.now();
+      const realNow = Date.now;
+      Date.now = () => fixedNow;
+      try {
+        renderIssueChart(series);
+        const widths = [...document.querySelectorAll('#iBugBeads path')]
+          .map(p => +p.getAttribute('stroke-width'));
 
-      const W = 1000;
-      const maxDays = Math.max(1, (now - new Date(series.days[0] + 'T00:00:00Z').getTime()) / 86400000);
-      const ago = d => Math.max(0, (now - new Date(d + 'T12:00:00Z').getTime()) / 86400000);
-      const expected = [
-        churnStroke(2,  dayWidth(ago(series.days[0]), maxDays, W)),
-        churnStroke(20, dayWidth(ago(series.days[1]), maxDays, W)),
-      ];
-      return { widths, expected };
+        const W = 1000;
+        const maxDays = Math.max(1, (fixedNow - new Date(series.days[0] + 'T00:00:00Z').getTime()) / 86400000);
+        const ago = d => Math.max(0, (fixedNow - new Date(d + 'T12:00:00Z').getTime()) / 86400000);
+        const expected = [
+          churnStroke(2,  dayWidth(ago(series.days[0]), maxDays, W)),
+          churnStroke(20, dayWidth(ago(series.days[1]), maxDays, W)),
+        ];
+        return { widths, expected };
+      } finally {
+        Date.now = realNow;
+      }
     }, series);
 
     await expect(page.locator('#issueChartSvg')).toBeVisible();

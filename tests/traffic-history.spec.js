@@ -10,9 +10,19 @@ const { test, expect } = require('@playwright/test');
 // parameterized by data.length, so the same math applies to a longer,
 // growing range without modification.
 
+// The page runs its own load() on startup, which fetches the real
+// traffic-log CSV and re-renders the chart in the background — racing
+// whatever a test renders manually. Block the network and wait for that
+// run to finish first (same pattern as issue-trend.spec.js's gotoQuiet()).
+async function gotoQuiet(page) {
+  await page.route(/^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//, r => r.abort());
+  await page.goto('/index.html');
+  await page.waitForFunction(() => !document.getElementById('refreshBtn').classList.contains('spinning'));
+}
+
 test.describe('parseTrafficCsv', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('parses rows and skips the header', async ({ page }) => {
@@ -33,7 +43,7 @@ test.describe('parseTrafficCsv', () => {
 
 test.describe('aggregateTrafficHistory', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('sums views/uniques across repos for the same date', async ({ page }) => {
@@ -58,7 +68,7 @@ test.describe('aggregateTrafficHistory', () => {
 
 test.describe('renderChart', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('shows a message and hides the chart when there is no data', async ({ page }) => {
@@ -101,7 +111,7 @@ test.describe('renderChart', () => {
 
 test.describe('loadTraffic', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/index.html');
+    await gotoQuiet(page);
   });
 
   test('fetches, filters to monitored repos, and renders', async ({ page }) => {
