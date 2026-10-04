@@ -364,7 +364,7 @@ a.feed-label:hover { color: var(--text-muted); }
     <span class="traffic-label">Issues <span class="traffic-range" id="issueRange"></span></span>
     <div class="issue-legend">
       <span class="legend-item"><span class="legend-swatch" style="background:var(--ext)"></span>Bugs</span>
-      <span class="legend-item"><span class="legend-swatch" style="background:var(--accent)"></span>Feat</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--good)"></span>Feat</span>
       <span class="legend-item"><span class="legend-swatch" style="background:var(--text-dim)"></span>Misc</span>
     </div>
   </div>
@@ -1361,10 +1361,10 @@ function dayWidth(ago, maxDays, W) {
   return Math.abs(x1 - x2);
 }
 
-// Linear, not sqrt — a day's bar length should read as directly
-// proportional to its opens/closes count, not perceptually compressed.
+// Quadratic, not linear — a busy day should read as dramatically more
+// intense than a quiet one: 1/10th the count is 1/100th the length.
 function heatLen(n, maxVal, maxLen) {
-  return (n / maxVal) * maxLen;
+  return Math.pow(n / maxVal, 2) * maxLen;
 }
 
 function renderIssueChart(series) {
@@ -1399,7 +1399,7 @@ function renderIssueChart(series) {
     ...series.misc.map(m  => Math.max(m.opens, m.closes)),
     1
   );
-  const MAX_LEN = CH * 0.45;
+  const MAX_LEN = CH * 0.65;
 
   function xp(dateStr) {
     const ago = Math.max(0, (now - new Date(dateStr + 'T12:00:00Z').getTime()) / 86400000);
@@ -1407,13 +1407,16 @@ function renderIssueChart(series) {
   }
   function yp(n) { return Math.round(PAD + CH - (n / maxCount) * CH); }
 
-  // Each candle is a rectangle centered on y0 — the day's running open-issue
-  // count (same position the old connecting line sat at). It fades from the
-  // category color to white exactly at y0, then back to color below —
-  // white marks where "the line" would be; the color above/below shows
-  // how many issues opened/closed that day via a linear (not sqrt) length.
-  // Width is capped to the day's own slot (dayWidth) so a busy day far back
-  // in a long history can't visually smear across several neighboring days.
+  // Each candle is a vertical diamond/dart centered on y0 — the day's
+  // running open-issue count (same position the old connecting line sat
+  // at) — tapering to a point at both its top and bottom tips. It's at
+  // its widest exactly at y0, and fades from the category color to white
+  // there, then back to color at the tips — white marks where "the line"
+  // would be; the color above/below shows how many issues opened/closed
+  // that day via a quadratic (not linear) length, so busy days dominate.
+  // The half-width at y0 is capped to the day's own plot slot (dayWidth,
+  // doubled) so a busy day far back in a long history can't visually
+  // smear across several neighboring days.
   function buildCandles(pts, catId, color) {
     let out = '';
     for (let i = 0; i < series.days.length; i++) {
@@ -1428,24 +1431,28 @@ function renderIssueChart(series) {
       const bot  = Math.max(y0 + down, top + 0.5);
       const whiteOffset = (up / (up + down || 1)).toFixed(3);
 
-      const ago   = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
-      const width = Math.min(8, dayWidth(ago, maxDays, W));
+      const ago  = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
+      const slot = Math.min(10, dayWidth(ago, maxDays, W));
       const gradId = `ig${catId}${i}`;
+
+      const points = `${x.toFixed(1)},${top.toFixed(2)} `
+                   +   `${(x + slot).toFixed(1)},${y0.toFixed(2)} `
+                   +   `${x.toFixed(1)},${bot.toFixed(2)} `
+                   +   `${(x - slot).toFixed(1)},${y0.toFixed(2)}`;
 
       out += `<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">`
            +   `<stop offset="0" style="stop-color:${color}"/>`
            +   `<stop offset="${whiteOffset}" style="stop-color:#fff"/>`
            +   `<stop offset="1" style="stop-color:${color}"/>`
            + `</linearGradient>`
-           + `<rect class="issue-candle" x="${(x - width / 2).toFixed(1)}" y="${top.toFixed(2)}" `
-           +   `width="${width.toFixed(1)}" height="${(bot - top).toFixed(2)}" fill="url(#${gradId})"/>`;
+           + `<polygon class="issue-candle" points="${points}" fill="url(#${gradId})"/>`;
     }
     return out;
   }
 
   for (const [id, pts, color] of [
     ['Bug',  series.bugs,  'var(--ext)'],
-    ['Feat', series.feats, 'var(--accent)'],
+    ['Feat', series.feats, 'var(--good)'],
     ['Misc', series.misc,  'var(--text-dim)'],
   ]) {
     document.getElementById(`i${id}Beads`).innerHTML = buildCandles(pts, id, color);
