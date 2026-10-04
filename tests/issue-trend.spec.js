@@ -56,6 +56,22 @@ test.describe('buildIssueSeries', () => {
   });
 });
 
+test.describe('dayWidth', () => {
+  test.beforeEach(async ({ page }) => {
+    await gotoQuiet(page);
+  });
+
+  test('is widest for the most recent day and shrinks as days get older', async ({ page }) => {
+    const [today, aWeekAgo, aYearAgo] = await page.evaluate(() => [
+      dayWidth(0, 365, 1000),
+      dayWidth(7, 365, 1000),
+      dayWidth(364, 365, 1000),
+    ]);
+    expect(today).toBeGreaterThan(aWeekAgo);
+    expect(aWeekAgo).toBeGreaterThan(aYearAgo);
+  });
+});
+
 test.describe('churnStroke', () => {
   test.beforeEach(async ({ page }) => {
     await gotoQuiet(page);
@@ -65,11 +81,17 @@ test.describe('churnStroke', () => {
     expect(await page.evaluate(() => churnStroke(1))).toBeGreaterThanOrEqual(4);
   });
 
-  test('grows with churn and is capped at 12px', async ({ page }) => {
+  test('grows with churn and is capped at 12px when there is room', async ({ page }) => {
     const [a, b, c, cap] = await page.evaluate(() => [churnStroke(2), churnStroke(5), churnStroke(10), churnStroke(500)]);
     expect(a).toBeLessThan(b);
     expect(b).toBeLessThan(c);
     expect(cap).toBe(12);
+  });
+
+  test('is capped by the available day width, not just the 12px ceiling', async ({ page }) => {
+    const [narrow, wide] = await page.evaluate(() => [churnStroke(500, 3), churnStroke(500, 20)]);
+    expect(narrow).toBe(3);
+    expect(wide).toBe(12); // still bounded by the absolute ceiling even with room to spare
   });
 });
 
@@ -78,7 +100,7 @@ test.describe('renderIssueChart', () => {
     await gotoQuiet(page);
   });
 
-  test('draws one swell per category-day with activity, sized by churn', async ({ page }) => {
+  test('draws one swell per category-day with activity, sized by churn and day width', async ({ page }) => {
     const series = {
       days: ['2026-01-01', '2026-09-01'],
       bugs:  [{ count: 2, churn: 2 }, { count: 2, churn: 20 }],
@@ -86,21 +108,37 @@ test.describe('renderIssueChart', () => {
       misc:  [{ count: 0, churn: 0 }, { count: 0, churn: 0 }],
       total: 13,
     };
-    await page.evaluate((series) => renderIssueChart(series), series);
+    // Render and compute the expected per-day cap in the same evaluate()
+    // call, sharing one Date.now() — doing it in two round-trips drifts by
+    // the IPC gap between them, enough to flip the sub-pixel log-axis math.
+    const { widths, expected } = await page.evaluate((series) => {
+      const now = Date.now();
+      renderIssueChart(series);
+      const widths = [...document.querySelectorAll('#iBugBeads path')]
+        .map(p => +p.getAttribute('stroke-width'));
+
+      const W = 1000;
+      const maxDays = Math.max(1, (now - new Date(series.days[0] + 'T00:00:00Z').getTime()) / 86400000);
+      const ago = d => Math.max(0, (now - new Date(d + 'T12:00:00Z').getTime()) / 86400000);
+      const expected = [
+        churnStroke(2,  dayWidth(ago(series.days[0]), maxDays, W)),
+        churnStroke(20, dayWidth(ago(series.days[1]), maxDays, W)),
+      ];
+      return { widths, expected };
+    }, series);
 
     await expect(page.locator('#issueChartSvg')).toBeVisible();
     await expect(page.locator('#iBugBeads path')).toHaveCount(2);
     await expect(page.locator('#iFeatBeads path')).toHaveCount(1);
     await expect(page.locator('#iMiscBeads path')).toHaveCount(0);
-
-    const widths = await page.locator('#iBugBeads path').evaluateAll(ps => ps.map(p => +p.getAttribute('stroke-width')));
-    const expected = await page.evaluate(() => [churnStroke(2), churnStroke(20)]);
     expect(widths).toEqual(expected);
   });
 
-  // A flat day's swell is a near-zero-length stroke, so its geometry box is
-  // empty; hit-test the painted stroke instead, 4px off the line where only
-  // the swell (not the 1.5px line) can be.
+  // A flat day's swell is a near-zero-length stroke, so getBoundingClientRect()
+  // (which SVG reports geometry-only, no stroke/cap) is a single point — hit-
+  // test the painted stroke instead, offset from that point by just under
+  // half the swell's own stroke-width so the probe lands inside the round-
+  // cap's bulge but outside the 1.5px line underneath (same x, narrower).
   test('a flat busy day still paints a swell around the line', async ({ page }) => {
     const series = {
       days: ['2026-01-01', '2026-09-01'],
@@ -113,7 +151,8 @@ test.describe('renderIssueChart', () => {
     const hit = await page.evaluate(() => {
       const bead = document.querySelectorAll('#iBugBeads path')[1];
       const r = bead.getBoundingClientRect();
-      const el = document.elementFromPoint(r.left, r.top - 4);
+      const offset = +bead.getAttribute('stroke-width') / 2 - 1;
+      const el = document.elementFromPoint(r.left, r.top - offset);
       return el === bead;
     });
     expect(hit).toBe(true);

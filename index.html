@@ -1358,8 +1358,19 @@ function buildIssueSeries(cache, monitoredRepos) {
   return { days, bugs: out.bug, feats: out.feat, misc: out.misc, total: issues.length };
 }
 
-function churnStroke(churn) {
-  return Math.min(12, Math.round((2 + 2.2 * Math.sqrt(churn)) * 10) / 10);
+// Pixel width of a single calendar day at age `ago` (days before "now") on
+// the log-scaled x-axis described by `maxDays`/`W` — wide near "today",
+// compressed toward the left as history piles up.
+function dayWidth(ago, maxDays, W) {
+  const logMax = Math.log(maxDays + 1);
+  const x1 = W * (1 - Math.log(ago + 1) / logMax);
+  const x2 = W * (1 - Math.log(ago + 2) / logMax);
+  return Math.abs(x1 - x2);
+}
+
+function churnStroke(churn, maxWidth = 12) {
+  const want = Math.round((2 + 2.2 * Math.sqrt(churn)) * 10) / 10;
+  return Math.min(want, maxWidth, 12);
 }
 
 function renderIssueChart(series) {
@@ -1398,14 +1409,19 @@ function renderIssueChart(series) {
   // A swell is a round-capped vertical stroke over the day's step, so its
   // thickness beyond the line is the stroke width; the tiny length keeps a
   // flat (net-zero) day drawable, since zero-length subpaths can be skipped.
+  // Width is capped to that day's own slot (dayWidth) so a busy day far
+  // back in a long history — where days are squeezed under a pixel apart —
+  // can't visually smear across several neighboring days.
   function buildPaths(pts) {
     let line = `M0,${yp(0)}`, beads = '', prev = 0;
     for (let i = 0; i < series.days.length; i++) {
-      const x = xp(series.days[i]), pt = pts[i];
+      const day = series.days[i], x = xp(day), pt = pts[i];
       line += ` H${x} V${yp(pt.count)}`;
       if (pt.churn > 0) {
         const top = yp(Math.max(prev, pt.count)), bot = Math.max(yp(Math.min(prev, pt.count)), top + 0.01);
-        beads += `<path class="issue-bead" d="M${x},${top} L${x},${bot}" stroke-width="${churnStroke(pt.churn)}"/>`;
+        const ago = Math.max(0, (now - new Date(day + 'T12:00:00Z').getTime()) / 86400000);
+        const width = churnStroke(pt.churn, dayWidth(ago, maxDays, W));
+        beads += `<path class="issue-bead" d="M${x},${top} L${x},${bot}" stroke-width="${width}"/>`;
       }
       prev = pt.count;
     }
