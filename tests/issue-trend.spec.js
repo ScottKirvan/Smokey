@@ -397,6 +397,12 @@ test.describe('renderIssueChart', () => {
     ]);
   });
 
+  test('legend swatches use each category\'s bright core color, matching the spikes rather than the dark lines', async ({ page }) => {
+    const swatches = await page.evaluate(() =>
+      [...document.querySelectorAll('.issue-legend .legend-swatch')].map(s => s.getAttribute('style')));
+    expect(swatches).toEqual(['background:var(--bug-core)', 'background:var(--feat-core)', 'background:var(--misc-core)']);
+  });
+
   test('each category uses its own core color for the needle center and glow, and its line color for the line and today dot', async ({ page }) => {
     const series = {
       days: ['2026-06-01'],
