@@ -117,8 +117,8 @@ header {
   color: var(--text-dim); pointer-events: none;
 }
 .x-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.x-labels span:first-child { transform: none; }
-.x-labels span:last-child { transform: translateX(-100%); }
+/* Edge-anchored labels (left:0 / right:N) sit where they're put; the rest center on their x */
+.x-labels span.edge { transform: none; }
 
 /* ── Issue trend chart ── */
 .issue-legend { display:flex; gap:12px; margin-left:auto; align-items:center; }
@@ -748,7 +748,7 @@ function renderChart(data) {
   lbl.setAttribute('y', Math.max(py-4, 16));
   lbl.textContent = peakLbl;
 
-  lbls.innerHTML = `<span style="left:0">${data[0].date}</span><span style="right:0">${data[n-1].date}</span>`;
+  lbls.innerHTML = `<span class="edge" style="left:0">${data[0].date}</span><span class="edge" style="right:0">${data[n-1].date}</span>`;
 }
 
 function fmt(n) { return n >= 1000 ? `${(n/1000).toFixed(1)}k` : `${n}`; }
@@ -1596,7 +1596,7 @@ function renderIssueChart(series) {
     const pct = (logX(ms.days, maxDays, XW) / W * 100).toFixed(1);
     return `<span style="left:${pct}%">${ms.label}</span>`;
   });
-  spans.push(`<span style="right:0">today</span>`);
+  spans.push(`<span class="edge" style="right:${((W - XW) / W * 100).toFixed(2)}%">today</span>`);
   xlbl.innerHTML = spans.join('');
 
   const yrs = (maxDays / 365);

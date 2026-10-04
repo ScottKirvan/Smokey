@@ -102,6 +102,20 @@ test.describe('renderChart', () => {
     await expect(page.locator('#chartPeakLbl')).toHaveText('100');
   });
 
+  test('the oldest and newest date labels sit flush with the chart\'s left and right edges', async ({ page }) => {
+    // The newest label used to be pinned right and then pushed left again by
+    // its own width, ending well short of the edge.
+    const data = Array.from({ length: 5 }, (_, i) => ({ date: `2026-08-0${i + 1}`, views: 1, uniques: 1 }));
+    const { wrap, first, last } = await page.evaluate((data) => {
+      renderChart(data);
+      const r = el => el.getBoundingClientRect();
+      const spans = document.querySelectorAll('#chartLabels span');
+      return { wrap: r(document.getElementById('chartLabels')), first: r(spans[0]), last: r(spans[spans.length - 1]) };
+    }, data);
+    expect(Math.abs(first.left - wrap.left)).toBeLessThan(1);
+    expect(Math.abs(last.right - wrap.right)).toBeLessThan(1);
+  });
+
   test('handles a single data point without a log(0) error', async ({ page }) => {
     await page.evaluate(() => renderChart([{ date: '2026-09-01', views: 5, uniques: 2 }]));
     await expect(page.locator('#chartSvg')).toBeVisible();

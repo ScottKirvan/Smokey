@@ -241,6 +241,33 @@ test.describe('renderIssueChart', () => {
     expect(g.widths).toEqual(['0.5']);
   });
 
+  test('axis labels line up with their grid lines: milestones centered on theirs, "today" ending at the today line', async ({ page }) => {
+    const series = {
+      days: ['2023-01-01', '2026-09-01'],
+      bugs:  [{ count: 1, opens: 1, closes: 0 }, { count: 2, opens: 1, closes: 0 }],
+      feats: [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
+      total: 2,
+    };
+    const { labels, lines } = await page.evaluate((series) => {
+      renderIssueChart(series);
+      const labels = [...document.querySelectorAll('#issueXLabels span')].map(s => {
+        const r = s.getBoundingClientRect();
+        return { text: s.textContent, center: (r.left + r.right) / 2, right: r.right };
+      });
+      const lines = [...document.querySelectorAll('#issueGrid .issue-grid-major')]
+        .map(l => l.getBoundingClientRect().left).sort((a, b) => a - b);
+      return { labels, lines };
+    }, series);
+    const today = labels.find(l => l.text === 'today');
+    const todayLine = lines[lines.length - 1];
+    expect(Math.abs(today.right - todayLine)).toBeLessThan(2);
+    for (const l of labels.filter(l => l.text !== 'today')) {
+      const nearest = Math.min(...lines.map(x => Math.abs(x - l.center)));
+      expect(nearest, `${l.text} should be centered on its line`).toBeLessThan(2);
+    }
+  });
+
   test('marks blend additively in dark mode and normally in light mode (screen would wash out to white)', async ({ page }) => {
     const series = {
       days: ['2026-06-01'],
