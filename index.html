@@ -20,6 +20,9 @@
   --bug-core:  #ff00ff; --bug:  #2b0f12; --bug-line:  #4b1d6b;
   --feat-core: #00ffff; --feat: #052b33; --feat-line: #0e4f5a;
   --misc-core: #5a6069; --misc: #14181e; --misc-line: #3e4249;
+  /* Star chart: one slot per repo, a validated categorical set (adjacent pairs pass CVD checks in this order) */
+  --star-1: #3987e5; --star-2: #d95926; --star-3: #199e70; --star-4: #c98500;
+  --star-5: #d55181; --star-6: #008300; --star-7: #9085e9; --star-8: #e66767;
   --issue-blend: screen; --issue-grid-opacity: 0.35;
 }
 @media (prefers-color-scheme: light) {
@@ -34,6 +37,7 @@
     --bug-core:  #24292f; --bug:  #c9d1d9; --bug-line:  #57606a;
     --feat-core: #8c959f; --feat: #e6eaef; --feat-line: #a8b1bb;
     --misc-core: #c9d1d9; --misc: #f0f3f6; --misc-line: #d8dee4;
+    --star-1: #2a78d6; --star-2: #eb6834; --star-3: #1baf7a; --star-4: #eda100; --star-5: #e87ba4; --star-6: #008300; --star-7: #4a3aa7; --star-8: #e34948;
     --issue-blend: normal; --issue-grid-opacity: 0.18;
   }
 }
@@ -47,6 +51,7 @@
   --bug-core:  #24292f; --bug:  #c9d1d9; --bug-line:  #57606a;
   --feat-core: #8c959f; --feat: #e6eaef; --feat-line: #a8b1bb;
   --misc-core: #c9d1d9; --misc: #f0f3f6; --misc-line: #d8dee4;
+  --star-1: #2a78d6; --star-2: #eb6834; --star-3: #1baf7a; --star-4: #eda100; --star-5: #e87ba4; --star-6: #008300; --star-7: #4a3aa7; --star-8: #e34948;
   --issue-blend: normal; --issue-grid-opacity: 0.18;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -172,6 +177,10 @@ header {
   will-change: transform;
 }
 @media (prefers-reduced-motion: no-preference) { #issuePlot:not(.sweep-off) { cursor: pointer; } }
+
+/* ── Star chart ── */
+.star-legend { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; }
+.star-legend .legend-count { color: var(--text-dim); font-weight: 400; margin-left: 2px; }
 
 /* ── Attention badges ── */
 .attn-section {
@@ -460,6 +469,18 @@ a.feed-label:hover { color: var(--text-muted); }
   </div>
 </section>
 
+<section class="traffic-section" id="starSection">
+  <div class="traffic-header">
+    <span class="traffic-label">Stars <span class="traffic-range" id="starRange"></span></span>
+    <div class="issue-legend star-legend" id="starLegend"></div>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-no-pat" id="starMsg">Loading star history…</div>
+    <svg id="starChartSvg" class="issue-svg" viewBox="0 0 1000 80" preserveAspectRatio="none" style="display:none"><g id="starBands"></g></svg>
+    <div class="x-labels" id="starXLabels" style="display:none"></div>
+  </div>
+</section>
+
 <section id="feedSection" style="display:none">
   <span class="feed-label">FEED</span>
   <div class="feed-row" id="feedRow"></div>
@@ -608,6 +629,7 @@ async function load() {
   S.loadedAt = new Date();
 
   await loadTraffic(); // no PAT needed — public CSV
+  loadStars(headers); // async, renders the star chart when its files arrive
 
   // Fetch PAT-gated data: CI status
   if (S.pat) {
@@ -816,6 +838,169 @@ function fmt(n) { return n >= 1000 ? `${(n/1000).toFixed(1)}k` : `${n}`; }
 // data source now. It's a public file, fetched directly with no PAT
 // involved, so the security constraint ("PAT sent only to
 // api.github.com") isn't touched by this at all.
+// ── Star chart ───────────────────────────────────────
+// Star history comes from each repo's `starlines` branch, kept up to date
+// weekly by Scott's Starline README action: a JSON array of every star's
+// timestamp (epoch ms). Public repos read it from raw.githubusercontent.com
+// with no PAT; private ones go through the API's contents endpoint, since the
+// PAT must never be sent anywhere but api.github.com.
+const STAR_SLOTS      = 8;                  // --star-1 … --star-8
+const STAR_COLORS_KEY = 'rw_star_colors_v1';
+const STAR_BUCKET_MS  = 365.25 / 4 * 86400000;
+let   starLoading     = false;
+
+function starlinePath(fullName) { return `${fullName}/starline-cache.json`; }
+
+async function fetchStarline(d, headers) {
+  try {
+    let r;
+    if (d.private) {
+      if (!S.pat) return null;
+      r = await fetch(`https://api.github.com/repos/${d.full_name}/contents/${starlinePath(d.full_name)}?ref=starlines`,
+        { headers: { ...headers, Accept: 'application/vnd.github.raw+json' } });
+    } else {
+      r = await fetch(`https://raw.githubusercontent.com/${d.full_name}/starlines/${starlinePath(d.full_name)}`);
+    }
+    if (!r.ok) return null;
+    const arr = await r.json();
+    return Array.isArray(arr) ? arr.filter(Number.isFinite) : null;
+  } catch(e) { return null; }
+}
+
+// Each repo keeps its color for good: the first time a repo has stars it
+// takes the next unused slot (most-starred first when several arrive at
+// once). Past the palette's size, a new repo goes into "other".
+function assignStarColors(totals, saved) {
+  const map  = { ...saved };
+  const used = new Set(Object.values(map));
+  const fresh = Object.keys(totals).filter(n => totals[n] > 0 && !(n in map))
+    .sort((a, b) => totals[b] - totals[a] || a.localeCompare(b));
+  for (const name of fresh) {
+    let slot = 0;
+    while (used.has(slot)) slot++;
+    if (slot >= STAR_SLOTS) break;
+    map[name] = slot;
+    used.add(slot);
+  }
+  return map;
+}
+
+// New stars per quarter, in rolling quarters ending now: the last bucket is
+// the last ~91 days, so a quarter that has only just begun can't fake a drop.
+// Bands stack in slot order (the order the palette was validated in), with
+// "other" on top.
+function buildStarSeries(starsByRepo, colorMap, now) {
+  const all = Object.values(starsByRepo).flat();
+  if (!all.length) return null;
+  const n = Math.max(1, Math.ceil((now - Math.min(...all)) / STAR_BUCKET_MS));
+  const start = now - n * STAR_BUCKET_MS;
+  const bucket = t => Math.min(n - 1, Math.max(0, Math.floor((t - start) / STAR_BUCKET_MS)));
+  const bands = new Map();
+  for (const [name, times] of Object.entries(starsByRepo)) {
+    if (!times.length) continue;
+    const slot = colorMap[name];
+    const key  = slot === undefined ? 'other' : slot;
+    if (!bands.has(key)) bands.set(key, { slot: key, names: [], total: 0, counts: new Array(n).fill(0) });
+    const b = bands.get(key);
+    b.names.push(name);
+    b.total += times.length;
+    for (const t of times) b.counts[bucket(t)]++;
+  }
+  const order = [...bands.keys()].sort((a, b) => (a === 'other') - (b === 'other') || a - b);
+  return { n, start, now, total: all.length, bands: order.map(k => bands.get(k)) };
+}
+
+async function loadStars(headers) {
+  if (starLoading) return;
+  starLoading = true;
+  try {
+    // Canonical names from fetchRepo(), never raw S.repos strings: the
+    // starlines folder is keyed by the repo's current name.
+    const repos = S.data.filter(d => !d.error);
+    const arrs  = await Promise.all(repos.map(d => fetchStarline(d, headers)));
+    const starsByRepo = {};
+    repos.forEach((d, i) => { if (arrs[i]) starsByRepo[d.full_name] = arrs[i]; });
+    const totals = Object.fromEntries(Object.entries(starsByRepo).map(([k, v]) => [k, v.length]));
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(STAR_COLORS_KEY) || '{}'); } catch(e) {}
+    const colorMap = assignStarColors(totals, saved);
+    try { localStorage.setItem(STAR_COLORS_KEY, JSON.stringify(colorMap)); } catch(e) {}
+    renderStarChart(buildStarSeries(starsByRepo, colorMap, Date.now()));
+  } finally {
+    starLoading = false;
+  }
+}
+
+// Catmull-Rom through the points as cubic Béziers: smooth, starline-style
+// curves that still pass through every bucket's value.
+function smoothCurve(pts) {
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(2)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)},${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(2)}`
+       +  ` ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)},${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(2)}`
+       +  ` ${p2[0].toFixed(1)},${p2[1].toFixed(2)}`;
+  }
+  return d;
+}
+
+function starColor(slot) { return slot === 'other' ? 'var(--text-dim)' : `var(--star-${slot + 1})`; }
+
+function renderStarChart(series) {
+  const msg = document.getElementById('starMsg'), svg = document.getElementById('starChartSvg');
+  const xlbl = document.getElementById('starXLabels'), rng = document.getElementById('starRange');
+  const legend = document.getElementById('starLegend');
+  if (!series) {
+    msg.textContent = 'No star history yet.';
+    msg.style.display = ''; svg.style.display = 'none'; xlbl.style.display = 'none';
+    rng.textContent = ''; legend.innerHTML = '';
+    return;
+  }
+  msg.style.display = 'none'; svg.style.display = 'block'; xlbl.style.display = '';
+
+  const W = 1000, H = 80, TOP = 6, BOT = 4, CH = H - TOP - BOT;
+  const { n, start, now } = series;
+  // Light smoothing (1-2-1) so single stars read as swells rather than spikes.
+  const smooth = c => c.map((v, i) => ((c[i - 1] ?? v) + 2 * v + (c[i + 1] ?? v)) / 4);
+  let base = new Array(n).fill(0);
+  const stacked = series.bands.map(b => {
+    const lo = base, hi = lo.map((v, i) => v + smooth(b.counts)[i]);
+    base = hi;
+    return { b, lo, hi };
+  });
+  const maxCum = Math.max(...base, 1e-9);
+  // Square-root height, so one big burst doesn't flatten everything else.
+  const y = v => H - BOT - Math.sqrt(Math.max(0, v) / maxCum) * CH;
+  const x = i => n === 1 ? (i ? W : 0) : (i / (n - 1)) * W;
+  const idx = n === 1 ? [0, 0] : [...Array(n).keys()];
+  const pts = arr => idx.map((k, j) => [x(n === 1 ? j : k), y(arr[k])]);
+
+  document.getElementById('starBands').innerHTML = stacked.map(({ b, lo, hi }) => {
+    const upper = pts(hi), lower = pts(lo).reverse();
+    const lowerD = smoothCurve(lower);
+    const area = `${smoothCurve(upper)} L${lower[0][0].toFixed(1)},${lower[0][1].toFixed(2)}${lowerD.slice(lowerD.indexOf(' '))} Z`;
+    return `<path class="star-band" d="${area}" fill="${starColor(b.slot)}" stroke="var(--surface)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  }).join('');
+
+  legend.innerHTML = series.bands.map(b => {
+    const label = b.slot === 'other' ? `other (${b.names.length})` : esc(repoLabel(b.names[0]));
+    return `<span class="legend-item"><span class="legend-swatch" style="background:${starColor(b.slot)}"></span>${label}<span class="legend-count">${b.total}</span></span>`;
+  }).join('');
+
+  // Each bucket's point sits at the bucket's end, so the x axis runs from the
+  // first bucket's end to now.
+  const t0 = n === 1 ? start : start + STAR_BUCKET_MS, spans = [];
+  for (let yr = new Date(t0).getUTCFullYear() + 1; ; yr++) {
+    const t = Date.UTC(yr, 0, 1);
+    if (t >= now) break;
+    const pct = (t - t0) / (now - t0) * 100;
+    if (pct > 4 && pct < 92) spans.push(`<span style="left:${pct.toFixed(1)}%">${yr}</span>`);
+  }
+  spans.push('<span class="edge" style="right:0">now</span>');
+  xlbl.innerHTML = spans.join('');
+  rng.textContent = `· ${series.total} stars · new per quarter`;
+}
+
 const TRAFFIC_LOG_URL = 'https://raw.githubusercontent.com/ScottKirvan/Smokey/traffic-log/views.csv';
 
 function parseTrafficCsv(text) {
