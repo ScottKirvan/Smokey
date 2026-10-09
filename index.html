@@ -845,7 +845,8 @@ function fmt(n) { return n >= 1000 ? `${(n/1000).toFixed(1)}k` : `${n}`; }
 // with no PAT; private ones go through the API's contents endpoint, since the
 // PAT must never be sent anywhere but api.github.com.
 const STAR_SLOTS      = 8;                  // --star-1 … --star-8
-const STAR_COLORS_KEY = 'rw_star_colors_v1';
+const STAR_SHOWN      = 4;                  // repos drawn in color; the rest are "other"
+const STAR_COLORS_KEY = 'rw_star_colors_v2';
 const STAR_BUCKET_MS  = 365.25 / 4 * 86400000;
 let   starLoading     = false;
 
@@ -867,39 +868,48 @@ async function fetchStarline(d, headers) {
   } catch(e) { return null; }
 }
 
-// Each repo keeps its color for good: the first time a repo has stars it
-// takes the next unused slot (most-starred first when several arrive at
-// once). Past the palette's size, a new repo goes into "other".
+function topStarRepos(totals) {
+  return Object.keys(totals).filter(n => totals[n] > 0)
+    .sort((a, b) => totals[b] - totals[a] || a.localeCompare(b)).slice(0, STAR_SHOWN);
+}
+
+// A repo takes a color the first time it reaches the top 4 and keeps it after
+// dropping out, so it comes back in the same color. Only when every palette
+// color is taken does a newcomer take one from a repo outside the top 4.
 function assignStarColors(totals, saved) {
   const map  = { ...saved };
-  const used = new Set(Object.values(map));
-  const fresh = Object.keys(totals).filter(n => totals[n] > 0 && !(n in map))
-    .sort((a, b) => totals[b] - totals[a] || a.localeCompare(b));
-  for (const name of fresh) {
+  const top  = topStarRepos(totals);
+  for (const name of top) {
+    if (name in map) continue;
+    const used = new Set(Object.values(map));
     let slot = 0;
     while (used.has(slot)) slot++;
-    if (slot >= STAR_SLOTS) break;
+    if (slot >= STAR_SLOTS) {
+      const shown = new Set(top.map(n => map[n]));
+      slot = 0;
+      while (shown.has(slot)) slot++;
+      for (const n of Object.keys(map)) if (map[n] === slot) delete map[n];
+    }
     map[name] = slot;
-    used.add(slot);
   }
   return map;
 }
 
 // New stars per quarter, in rolling quarters ending now: the last bucket is
 // the last ~91 days, so a quarter that has only just begun can't fake a drop.
-// Bands stack in slot order (the order the palette was validated in), with
-// "other" on top.
+// The top 4 repos stack in slot order (the order the palette was validated
+// in), with "other" on top.
 function buildStarSeries(starsByRepo, colorMap, now) {
   const all = Object.values(starsByRepo).flat();
   if (!all.length) return null;
   const n = Math.max(1, Math.ceil((now - Math.min(...all)) / STAR_BUCKET_MS));
   const start = now - n * STAR_BUCKET_MS;
   const bucket = t => Math.min(n - 1, Math.max(0, Math.floor((t - start) / STAR_BUCKET_MS)));
+  const top = new Set(topStarRepos(Object.fromEntries(Object.entries(starsByRepo).map(([k, v]) => [k, v.length]))));
   const bands = new Map();
   for (const [name, times] of Object.entries(starsByRepo)) {
     if (!times.length) continue;
-    const slot = colorMap[name];
-    const key  = slot === undefined ? 'other' : slot;
+    const key = top.has(name) && name in colorMap ? colorMap[name] : 'other';
     if (!bands.has(key)) bands.set(key, { slot: key, names: [], total: 0, counts: new Array(n).fill(0) });
     const b = bands.get(key);
     b.names.push(name);

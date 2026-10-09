@@ -18,30 +18,41 @@ const DAY = 86400000;
 test.describe('assignStarColors', () => {
   test.beforeEach(async ({ page }) => { await gotoQuiet(page); });
 
-  test('new repos take the next unused slots, most-starred first', async ({ page }) => {
-    const map = await page.evaluate(() => assignStarColors({ 'o/a': 1, 'o/b': 9, 'o/c': 4 }, {}));
-    expect(map).toEqual({ 'o/b': 0, 'o/c': 1, 'o/a': 2 });
+  test('only the top 4 repos by stars get a color, most-starred first', async ({ page }) => {
+    const map = await page.evaluate(() =>
+      assignStarColors({ 'o/a': 1, 'o/b': 9, 'o/c': 4, 'o/d': 7, 'o/e': 5, 'o/f': 2 }, {}));
+    expect(map).toEqual({ 'o/b': 0, 'o/d': 1, 'o/e': 2, 'o/c': 3 });
   });
 
-  test('existing repos keep their slot even when the star ranking changes', async ({ page }) => {
+  test('a repo keeps its color after it drops out of the top 4, so it comes back in the same color', async ({ page }) => {
+    const map = await page.evaluate(() => assignStarColors(
+      { 'o/a': 50, 'o/b': 40, 'o/c': 30, 'o/new': 20, 'o/d': 2 },
+      { 'o/a': 0, 'o/b': 1, 'o/c': 2, 'o/d': 3 }));
+    expect(map).toEqual({ 'o/a': 0, 'o/b': 1, 'o/c': 2, 'o/d': 3, 'o/new': 4 }); // newcomer gets a fresh color
+  });
+
+  test('existing colors never move when the ranking changes', async ({ page }) => {
     const map = await page.evaluate(() =>
       assignStarColors({ 'o/a': 50, 'o/b': 2, 'o/new': 30 }, { 'o/b': 0, 'o/a': 2 }));
     expect(map).toEqual({ 'o/b': 0, 'o/a': 2, 'o/new': 1 }); // fills the gap, doesn't reshuffle
   });
 
-  test('repos with no stars get no slot yet', async ({ page }) => {
+  test('repos with no stars get no color', async ({ page }) => {
     const map = await page.evaluate(() => assignStarColors({ 'o/a': 0, 'o/b': 3 }, {}));
     expect(map).toEqual({ 'o/b': 0 });
   });
 
-  test('past the palette size, new repos stay unassigned (they go into "other")', async ({ page }) => {
+  test('when every palette color is taken, a newcomer to the top 4 takes one from a repo outside it', async ({ page }) => {
     const { map, slots } = await page.evaluate(() => {
-      const totals = Object.fromEntries([...Array(10).keys()].map(i => [`o/r${i}`, 20 - i]));
-      return { map: assignStarColors(totals, {}), slots: STAR_SLOTS };
+      const saved = Object.fromEntries([...Array(STAR_SLOTS).keys()].map(i => [`o/old${i}`, i]));
+      const totals = { 'o/old0': 90, 'o/old1': 80, 'o/old2': 70, 'o/new': 60 };
+      for (let i = 3; i < STAR_SLOTS; i++) totals[`o/old${i}`] = 1;
+      return { map: assignStarColors(totals, saved), slots: STAR_SLOTS };
     });
+    expect(map['o/new']).toBe(3);         // the lowest slot not held by a shown repo
+    expect(map['o/old3']).toBeUndefined(); // gave it up
+    expect(new Set(Object.values(map)).size).toBe(Object.keys(map).length);
     expect(Object.keys(map)).toHaveLength(slots);
-    expect(map['o/r8']).toBeUndefined();
-    expect(map['o/r9']).toBeUndefined();
   });
 });
 
@@ -75,6 +86,17 @@ test.describe('buildStarSeries', () => {
     const other = s.bands[2];
     expect(other.names.sort()).toEqual(['o/x', 'o/y']);
     expect(other.total).toBe(3);
+  });
+
+  test('only the top 4 repos by stars get their own band, even if others have a saved color', async ({ page }) => {
+    const now = Date.UTC(2026, 9, 8);
+    const s = await page.evaluate(({ now, DAY }) => {
+      const stars = n => [...Array(n).keys()].map(i => now - (i + 1) * DAY);
+      return buildStarSeries({ 'o/a': stars(9), 'o/b': stars(8), 'o/c': stars(7), 'o/d': stars(6), 'o/e': stars(1) },
+        { 'o/a': 0, 'o/b': 1, 'o/c': 2, 'o/d': 3, 'o/e': 4 }, now);
+    }, { now, DAY });
+    expect(s.bands.map(b => b.slot)).toEqual([0, 1, 2, 3, 'other']);
+    expect(s.bands[4].names).toEqual(['o/e']);
   });
 
   test('no stars at all gives no series', async ({ page }) => {
