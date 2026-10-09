@@ -180,6 +180,7 @@ header {
 
 /* ── Star chart ── */
 .star-legend { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; }
+.star-legend .legend-item { text-transform: none; }
 .star-legend .legend-count { color: var(--text-dim); font-weight: 400; margin-left: 2px; }
 
 /* ── Attention badges ── */
@@ -979,8 +980,7 @@ function renderStarChart(series) {
     return { b, lo, hi };
   });
   const maxCum = Math.max(...base, 1e-9);
-  // Square-root height, so one big burst doesn't flatten everything else.
-  const y = v => H - BOT - Math.sqrt(Math.max(0, v) / maxCum) * CH;
+  const y = v => H - BOT - Math.max(0, v) / maxCum * CH;
   const x = i => n === 1 ? (i ? W : 0) : (i / (n - 1)) * W;
   const idx = n === 1 ? [0, 0] : [...Array(n).keys()];
   const pts = arr => idx.map((k, j) => [x(n === 1 ? j : k), y(arr[k])]);

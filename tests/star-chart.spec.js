@@ -251,6 +251,32 @@ test.describe('renderStarChart', () => {
     for (const yr of Object.keys(labels)) expect(labels[yr]).toBeCloseTo(want[yr], 0);
   });
 
+  test('band heights are linear in the star count', async ({ page }) => {
+    // o/a gets 1 star a quarter and o/b 3, so the stack tops out at 4 and o/a's
+    // top edge sits a quarter of the way up the plot (TOP 6, BOT 4, H 80).
+    const now = Date.UTC(2026, 9, 8);
+    const d = await page.evaluate(({ now, DAY }) => {
+      const q = i => now - (i * 91 + 10) * DAY;
+      renderStarChart(buildStarSeries({
+        'o/a': [0, 1, 2, 3].map(q), 'o/b': [0, 1, 2, 3].flatMap(i => [q(i), q(i) - DAY, q(i) - 2 * DAY]),
+      }, { 'o/a': 0, 'o/b': 1 }, now));
+      return [...document.querySelectorAll('#starBands .star-band')].map(p => p.getAttribute('d'));
+    }, { now, DAY });
+    expect(d[0].startsWith('M0.0,58.50 ')).toBe(true); // 76 - 70/4
+    expect(d[1].startsWith('M0.0,6.00 ')).toBe(true);  // the top of the stack
+  });
+
+  test('legend names keep the repo name\'s own case', async ({ page }) => {
+    const now = Date.UTC(2026, 9, 8);
+    const out = await page.evaluate(({ now, DAY }) => {
+      renderStarChart(buildStarSeries({ 'o/ScooterUtils': [now - DAY] }, { 'o/ScooterUtils': 0 }, now));
+      const item = document.querySelector('#starLegend .legend-item');
+      return { text: item.textContent, transform: getComputedStyle(item).textTransform };
+    }, { now, DAY });
+    expect(out.text).toBe('ScooterUtils1');
+    expect(out.transform).toBe('none');
+  });
+
   test('every band path stays inside the chart box', async ({ page }) => {
     const now = Date.UTC(2026, 9, 8);
     const box = await page.evaluate(({ now, DAY }) => {
