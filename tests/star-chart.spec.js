@@ -313,3 +313,47 @@ test.describe('renderStarChart', () => {
     await expect(page.locator('#starRange')).toHaveText('');
   });
 });
+
+test.describe('colored-repo count setting', () => {
+  test.beforeEach(async ({ page }) => { await gotoQuiet(page); });
+
+  test('the number of colored repos follows S.starShown', async ({ page }) => {
+    const out = await page.evaluate(() => {
+      const totals = { 'o/a': 9, 'o/b': 8, 'o/c': 7, 'o/d': 6, 'o/e': 5, 'o/f': 4 };
+      const def = topStarRepos(totals);
+      S.starShown = 5;
+      const five = topStarRepos(totals);
+      const map = assignStarColors(totals, {});
+      return { defaultCount: def.length, five, map };
+    });
+    expect(out.defaultCount).toBe(4);
+    expect(out.five).toEqual(['o/a', 'o/b', 'o/c', 'o/d', 'o/e']);
+    expect(Object.keys(out.map).sort()).toEqual(['o/a', 'o/b', 'o/c', 'o/d', 'o/e']);
+  });
+
+  test('buildStarSeries draws one band per colored repo plus other', async ({ page }) => {
+    const now = Date.UTC(2026, 9, 8);
+    const slots = await page.evaluate(({ now, DAY }) => {
+      S.starShown = 5;
+      const stars = n => [...Array(n).keys()].map(i => now - (i + 1) * DAY);
+      const byRepo = { 'o/a': stars(9), 'o/b': stars(8), 'o/c': stars(7), 'o/d': stars(6), 'o/e': stars(5), 'o/f': stars(1) };
+      const counts = Object.fromEntries(Object.entries(byRepo).map(([k, v]) => [k, v.length]));
+      return buildStarSeries(byRepo, assignStarColors(counts, {}), now).bands.map(b => b.slot);
+    }, { now, DAY });
+    expect(slots).toEqual([0, 1, 2, 3, 4, 'other']);
+  });
+
+  test('the setting is saved from Settings and read back on load, clamped to the palette', async ({ page }) => {
+    await page.evaluate(() => openConfig());
+    await expect(page.locator('#starShownInput')).toHaveValue('4');
+    await page.locator('#starShownInput').fill('5');
+    await page.evaluate(() => saveConfig());
+    expect(await page.evaluate(() => [S.starShown, localStorage.getItem('rw_star_shown')])).toEqual([5, '5']);
+
+    for (const [stored, want] of [['5', 5], ['12', 8], ['0', 1], ['abc', 4]]) {
+      await page.evaluate(v => localStorage.setItem('rw_star_shown', v), stored);
+      await gotoQuiet(page);
+      expect(await page.evaluate(() => S.starShown)).toBe(want);
+    }
+  });
+});
