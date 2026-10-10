@@ -83,6 +83,13 @@ localStorage keys: `rw_pat`, `rw_repos`, `rw_show_org`, `rw_feed`, `rw_notifs`, 
 
 - Commits, PRs, issues, stars and forks per week, one intensity strip per type. The follower API has no follow timestamps, so follows can't be plotted over time.
 
+### Next stage (design in `notes/dev/`)
+
+Scott decided on 2026-10-09 that Smokey's next stage is a broader tool: a serverless, GitHub-only explorer for developer accounts and their repos, with a long-term view, lenses, comparison, a profile card kit and opt-in published snapshots. It's deliberately unnamed (`<tool>` placeholder). Start at `notes/dev/README.md`; decisions are ADRs in `notes/dev/adr/`, and everything else there is marked `[Proposed — unconfirmed]` where it hasn't been decided.
+
+- It will be built in TypeScript with a build step, on a separate branch. `main` keeps the no-build, single-file app until cutover, so the "do not introduce a build step" rule above still holds on `main`.
+- It's a clean break: no compatibility with current `localStorage` keys or snapshot formats, with a one-time migration of the `traffic-log` and `starlines` history at cutover.
+
 ### Security constraint — must be preserved
 
 The PAT is stored **only** in `localStorage` and sent **only** to `api.github.com`. It is never transmitted to any other origin. Do not add code that sends the PAT elsewhere.

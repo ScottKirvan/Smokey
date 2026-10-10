@@ -1,0 +1,11 @@
+{
+  "schema": "<tool>/evidence-record@0",
+  "subject": { "type": "repo", "id": "ScottKirvan/Smokey" },
+  "metric": "github.repo.traffic.views",
+  "value": 348,
+  "unit": "count",
+  "period": { "start": "2026-10-04T00:00:00Z", "end": "2026-10-05T00:00:00Z" },
+  "source": { "collector": "github/traffic", "version": "0.0.0", "endpoint": "/repos/ScottKirvan/Smokey/traffic/views" },
+  "access": "owner",
+  "provenance": { "kind": "snapshot" }
+}

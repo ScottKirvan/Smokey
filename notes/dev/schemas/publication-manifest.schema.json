@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "publication-manifest.schema.json",
+  "title": "Publication manifest",
+  "description": "index.json at the root of an owner's data branch: what's published and how to verify it. Draft, proposed: see notes/dev/rfc/0002-snapshots-card-kit-publishing.md.",
+  "type": "object",
+  "required": ["schema", "owner", "updatedAt", "datasets"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "<tool>/publication-manifest@0" },
+    "owner": { "type": "string", "description": "The account that publishes this data." },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "workflow": {
+      "type": "string",
+      "description": "The workflow that writes this branch, for example ScottKirvan/ScottKirvan/.github/workflows/snapshot.yml."
+    },
+    "datasets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dataset" }
+    }
+  },
+  "$defs": {
+    "dataset": {
+      "type": "object",
+      "required": ["name", "files"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": ["traffic", "release-downloads", "stars-timeline", "counts", "registry-downloads", "external-scores"]
+        },
+        "files": { "type": "array", "items": { "$ref": "#/$defs/file" } }
+      }
+    },
+    "file": {
+      "type": "object",
+      "required": ["path", "subject", "month", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "description": "Path within the branch, for example datasets/traffic/ScottKirvan/Smokey/2026-10.jsonl." },
+        "subject": { "type": "string" },
+        "month": { "type": "string", "pattern": "^\\d{4}-(0[1-9]|1[0-2])$" },
+        "records": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "attestation": { "type": "string", "description": "Reference to the artifact attestation for this file, when signed." }
+      }
+    }
+  }
+}

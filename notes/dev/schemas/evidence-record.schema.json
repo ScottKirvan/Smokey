@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evidence-record.schema.json",
+  "title": "Evidence record",
+  "description": "One observed fact about one subject at one point or period in time. Draft, proposed: see notes/dev/rfc/0001-evidence-metrics-lenses.md.",
+  "type": "object",
+  "required": ["schema", "subject", "metric", "value", "source", "access", "provenance"],
+  "oneOf": [
+    { "required": ["at"], "not": { "required": ["period"] } },
+    { "required": ["period"], "not": { "required": ["at"] } }
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "<tool>/evidence-record@0" },
+    "subject": { "$ref": "#/$defs/subject" },
+    "metric": {
+      "type": "string",
+      "description": "Namespaced metric key, for example github.repo.release.downloads.",
+      "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+    },
+    "value": {
+      "description": "The observed value. Objects are for small structured values such as a referrer and its counts.",
+      "type": ["number", "string", "boolean", "object"]
+    },
+    "unit": { "type": "string", "description": "Unit of a numeric value, for example count, hours, percent." },
+    "at": { "type": "string", "format": "date-time" },
+    "period": {
+      "type": "object",
+      "required": ["start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["collector", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "collector": { "type": "string", "description": "Collector plugin ID, for example github/releases." },
+        "version": { "type": "string" },
+        "endpoint": { "type": "string", "description": "The API endpoint or URL the value came from." }
+      }
+    },
+    "access": {
+      "enum": ["public", "token", "owner", "snapshot"],
+      "description": "What was needed to see this value."
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["api", "snapshot", "derived", "external"] },
+        "inputs": {
+          "type": "array",
+          "description": "For derived records: the metric keys they were computed from.",
+          "items": { "type": "string" }
+        },
+        "attestation": {
+          "type": "string",
+          "description": "Reference to an artifact attestation covering the file this record was published in."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "subject": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["user", "org", "repo"] },
+        "id": {
+          "type": "string",
+          "description": "Login for accounts, owner/name for repos, as resolved from the API (never user-typed)."
+        },
+        "nodeId": {
+          "type": "string",
+          "description": "GitHub's stable node ID, so renames don't orphan data."
+        }
+      }
+    }
+  }
+}

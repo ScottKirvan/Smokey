@@ -1,0 +1,20 @@
+{
+  "schema": "<tool>/publication-manifest@0",
+  "owner": "ScottKirvan",
+  "updatedAt": "2026-10-05T08:00:00Z",
+  "workflow": "ScottKirvan/ScottKirvan/.github/workflows/snapshot.yml",
+  "datasets": [
+    {
+      "name": "release-downloads",
+      "files": [
+        {
+          "path": "datasets/release-downloads/ScottKirvan/BojuBot/2026-10.jsonl",
+          "subject": "ScottKirvan/BojuBot",
+          "month": "2026-10",
+          "records": 12,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ]
+}

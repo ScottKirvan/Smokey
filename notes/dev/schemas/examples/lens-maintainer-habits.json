@@ -1,0 +1,35 @@
+{
+  "schema": "<tool>/lens@0",
+  "id": "core/maintainer-habits",
+  "version": "0.1.0",
+  "title": "Maintainer habits",
+  "description": "How an account's repos are run: responsiveness, releases and CI. Illustrative thresholds only.",
+  "subjects": ["user", "org", "repo"],
+  "dimensions": [
+    {
+      "id": "first-response",
+      "title": "First response to outside issues",
+      "metrics": ["github.repo.issues.first-response-hours.median"],
+      "controllable": true,
+      "normalizer": { "kind": "threshold", "zero": 336, "full": 72 }
+    },
+    {
+      "id": "release-cadence",
+      "title": "Releases per quarter",
+      "metrics": ["github.repo.releases.per-quarter"],
+      "controllable": true,
+      "normalizer": { "kind": "relative" }
+    },
+    {
+      "id": "ci-health",
+      "title": "CI success rate",
+      "metrics": ["github.repo.ci.success-rate"],
+      "controllable": true,
+      "normalizer": { "kind": "threshold", "zero": 50, "full": 95 }
+    }
+  ],
+  "panels": [
+    { "kind": "profile", "title": "At a glance", "dimensions": ["first-response", "release-cadence", "ci-health"] },
+    { "kind": "trend", "title": "Responsiveness over time", "dimensions": ["first-response"] }
+  ]
+}
