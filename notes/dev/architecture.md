@@ -77,6 +77,39 @@ flowchart LR
 | Snapshot workflow | Owner's GitHub Actions | Append snapshots; publish opt-in datasets |
 | Card kit | Owner's GitHub Actions | Render images, README fragment and HTML from public datasets |
 
+## Deployment `[Proposed — unconfirmed]`
+
+Where each piece is built, where it's published, and where it runs. Design: [RFC-0003](rfc/0003-build-release-delivery.md).
+
+```mermaid
+flowchart LR
+  subgraph repo [Tool's repo · GitHub Actions]
+    ci[CI on the development branch<br/>build · test · dry-run releases]
+    rel[Release on main<br/>release-please · SBOM · attestations]
+  end
+  npm[(npm<br/>core · collectors · lenses · CLI)]
+  tags[(Action tags<br/>action-snapshot@v1 · action-card@v1)]
+  pages[(GitHub Pages<br/>explorer + docs, one site)]
+  art[(Workflow artifacts<br/>never published)]
+  ci --> art
+  rel --> npm
+  rel --> tags
+  rel --> pages
+  npm -->|npx / install| term[User's machine]
+  tags -->|uses:| owner[Owner's repo · Actions]
+  pages -->|static site| browser[Viewer's browser]
+```
+
+| Artifact | Built and published by | Published to | Runs in |
+| --- | --- | --- | --- |
+| Libraries (`schema`, `core`, collectors, `lenses`, `render`) | Release workflow on `main` | npm, with provenance | Wherever they're embedded |
+| CLI (TUI, local API, MCP) | Release workflow on `main` | npm | User's machine |
+| Snapshot and card Actions | Release workflow on `main` | Version tags in the repo (bundled JavaScript) | Owner's GitHub Actions |
+| Explorer and user docs | Release workflow on `main` | GitHub Pages, one site | Viewer's browser |
+| Published data | Owner's snapshot workflow | Data branch in the owner's repo | Read by any tool |
+
+The development branch builds all of these and uploads them as workflow artifacts; it publishes none of them.
+
 ## Data flow
 
 1. **Resolve** the subject: an account (user or org) or a repo, plus what the credential can see.
