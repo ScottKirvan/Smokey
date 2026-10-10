@@ -95,11 +95,26 @@ Requirement IDs are stable references for stories, tests and ADRs. Items marked 
 - **R-P2** Collectors, lenses, visuals and external scores are extensible through plugins.
 - **R-P3** The terminal interface is first-class.
 
+### Delivery and operations
+
+How the tool is built, released, hosted and run. All `[Proposed — unconfirmed]`; the design is in [RFC-0003](rfc/0003-build-release-delivery.md).
+
+- **R-D1** Every PR into the development branch runs typecheck, lint, unit tests, schema validation, the explorer's end-to-end tests and workflow lint; they must pass to merge.
+- **R-D2** The development branch publishes nothing: no releases, tags, npm packages, live Pages deploys or announcements.
+- **R-D3** Every artifact the cutover ships (npm packages, Action bundles, the explorer build) is built in CI on the development branch before cutover, and every release job can be dry-run there.
+- **R-D4** Each release of a package, Action bundle or the explorer comes with an SBOM and build provenance (artifact attestations).
+- **R-D5** The tool's own workflows and the Actions it ships pin third-party actions to commit SHAs.
+- **R-D6** The explorer and its user docs deploy together as one GitHub Pages site.
+- **R-D7** A deploy reaches returning users, including the installed PWA, on their next load.
+- **R-D8** The published data format and the Actions' inputs and outputs are versioned public contracts; a breaking change bumps the major version and ships a converter or migration note.
+- **R-D9** Snapshot runs that hit an expired token, a rate limit or a partial fetch fail visibly and commit nothing, and an expiring token is flagged before it expires.
+- **R-D10** Cutover follows a written runbook with verification steps and a rollback path.
+
 ## Progression
 
 Phases are an order of construction, not releases. All development happens on a separate branch; Smokey's `main` keeps running until cutover. Everything below is `[Proposed — unconfirmed]` as to order.
 
-0. **Foundations.** Monorepo, schemas, core library, GitHub client with rate budgeting, fixture-recorded tests.
+0. **Foundations.** Monorepo, schemas, core library, GitHub client with rate budgeting, fixture-recorded tests, CI on the development branch ([RFC-0003](rfc/0003-build-release-delivery.md)).
 1. **Today parity.** Rebuild Smokey's current features on the new core in the explorer.
 2. **Snapshot workflow.** New Action replacing `log-traffic.yml`, adding downloads, star timing and registry data; converter for the existing `traffic-log` CSVs and `starlines` caches.
 3. **Long-term view.** Trends, dimensions, the first lenses.
@@ -108,7 +123,7 @@ Phases are an order of construction, not releases. All development happens on a 
 6. **Publishing.** Discovery convention, attestation signing and in-explorer verification.
 7. **Terminal and local API.** CLI, TUI, local API and MCP.
 8. **Platform.** Stable plugin API; external-score plugins starting with github-readme-stats.
-9. **Cutover.** Run the migration, switch Pages to the new build, retire the old workflows.
+9. **Cutover.** Run the migration, switch Pages to the new build, retire the old workflows, following the [cutover runbook](outlines/cutover-runbook.md).
 
 ## Done looks like
 
@@ -137,3 +152,4 @@ Phases are an order of construction, not releases. All development happens on a 
 - How far comparisons stretch without a token, given the 60 requests/hour unauthenticated limit.
 - The starting set of built-in lenses.
 - The discovery path and file names for published data.
+- Delivery questions (development branch, how the Actions are published, the docs site, attestations in private repos): listed in [RFC-0003](rfc/0003-build-release-delivery.md#open-questions).
