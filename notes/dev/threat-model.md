@@ -24,6 +24,9 @@ Status: draft, 2026-10-09. Mitigations are `[Proposed — unconfirmed]` unless t
 | Prompt injection through MCP | An agent acting on instructions hidden in issue text, bios or commit messages | The local API returns GitHub text as data fields, never as instructions; MCP tools are read-only. |
 | Rate-limit exhaustion | Broken views; locked-out token | Planner budgets every collector; stop on 403/429 without advancing cursors (Smokey's issue-sync rule). |
 | Stale or renamed subjects | Silently missing data | Key subjects by GitHub `nodeId`; resolve canonical names from the API (Smokey's repo-rename rule). |
+| Workflow injection in the tool's own repo | Secrets or write access stolen through a crafted PR title, branch name or issue | Pass untrusted text to `run:` steps through `env:`, never `${{ }}` inside the script; no `pull_request_target` workflow checks out PR code ([RFC-0003](rfc/0003-build-release-delivery.md)). |
+| Shared workflow changed underneath | Releases change behaviour without review | Reference `ScottKirvan/.github` workflows by tag or SHA in this repo's release workflows ([RFC-0003](rfc/0003-build-release-delivery.md#supply-chain)). |
+| Published npm package or Action bundle tampered with | Malicious code in users' terminals or Actions | Publish only from CI with provenance; npm trusted publishing instead of a long-lived token; 2FA on the npm account; CI rebuilds each Action bundle and fails if it differs from the tagged one. |
 
 ## Out of scope
 

@@ -11,10 +11,11 @@ Started 2026-10-09. Development will happen on a separate branch; Smokey on `mai
 3. [architecture.md](architecture.md): principles, system context and container diagrams, proposed packages and stack.
 4. [rfc/0001-evidence-metrics-lenses.md](rfc/0001-evidence-metrics-lenses.md): how data is recorded, derived, judged and shown.
 5. [rfc/0002-snapshots-card-kit-publishing.md](rfc/0002-snapshots-card-kit-publishing.md): the snapshot workflow, published data, the card kit, and migration from Smokey's branches.
-6. [metrics-catalog.md](metrics-catalog.md): every signal, its source, access and cost.
-7. [schemas/](schemas/): draft JSON Schemas with validated examples.
-8. [privacy-and-legal.md](privacy-and-legal.md) and [threat-model.md](threat-model.md).
-9. [outlines/](outlines/): starting points for user stories, the local API, design tokens and the SBOM.
+6. [rfc/0003-build-release-delivery.md](rfc/0003-build-release-delivery.md): CI for the development branch, releasing packages and Actions, hosting, supply chain, and running the snapshot workflow.
+7. [metrics-catalog.md](metrics-catalog.md): every signal, its source, access and cost.
+8. [schemas/](schemas/): draft JSON Schemas with validated examples.
+9. [privacy-and-legal.md](privacy-and-legal.md) and [threat-model.md](threat-model.md).
+10. [outlines/](outlines/): starting points for user stories, the local API, design tokens, the SBOM and the cutover runbook.
 
 ## Decided versus proposed
 
