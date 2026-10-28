@@ -685,6 +685,11 @@ function renderRateLimit() {
   el.style.display = '';
 }
 
+// In-app bug reports are filed by a relay app (a bot), so the bot filter below
+// would hide them; the label they carry marks them as needing attention.
+const USER_REPORT_LABEL = 'user-report';
+const isUserReport = i => (i.labels || []).some(l => l.name === USER_REPORT_LABEL);
+
 async function fetchRepo(fullName, headers) {
   const base = `https://api.github.com/repos/${fullName}`;
   try {
@@ -705,7 +710,7 @@ async function fetchRepo(fullName, headers) {
     const me      = S.currentUser || owner;
     const isBot   = u => !u || u.type === 'Bot' || u.login?.endsWith('[bot]');
     const extPRs  = prs.filter(p => p.user?.login !== me && !isBot(p.user));
-    const extI    = issues.filter(i => i.user?.login !== me && !isBot(i.user));
+    const extI    = issues.filter(i => (i.user?.login !== me && !isBot(i.user)) || isUserReport(i));
     const issue_split = { bug: 0, feat: 0, misc: 0 };
     for (const i of issues) issue_split[issueCategory((i.labels || []).map(l => l.name))]++;
     return {
