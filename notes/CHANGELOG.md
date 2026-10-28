@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/ScottKirvan/Smokey/compare/v0.5.0...v0.5.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* flag in-app bug reports for attention even though a bot files them ([b41db75](https://github.com/ScottKirvan/Smokey/commit/b41db75d46d18c81939bf0cde80bbb112f96e8d0))
+
 ## [0.5.0](https://github.com/ScottKirvan/Smokey/compare/v0.4.0...v0.5.0) (2026-10-11)
 
 
