@@ -1991,7 +1991,12 @@ function renderIssueChart(series) {
   xlbl.innerHTML = spans.join('');
 
   const yrs = (maxDays / 365);
-  rng.textContent = `· ${series.total} issues · ${yrs < 1 ? Math.round(yrs * 12) + 'mo' : (Math.round(yrs * 10) / 10) + 'yr'}`;
+  const filed = cat => series[cat].reduce((n, p) => n + p.opens, 0);
+  const split = [['bug', 'bugs'], ['feat', 'feats'], ['misc', 'misc']].map(([cls, cat]) => {
+    const n = filed(cat);
+    return `<span class="ic-${cls}${n === 0 ? ' zero' : ''}">${n}</span>`;
+  }).join('<span class="ic-sep">/</span>');
+  rng.innerHTML = `· <span class="issue-split">${split}</span> · ${yrs < 1 ? Math.round(yrs * 12) + 'mo' : (Math.round(yrs * 10) / 10) + 'yr'}`;
 }
 
 document.getElementById('issuePlot').addEventListener('click', playIssueSweep);

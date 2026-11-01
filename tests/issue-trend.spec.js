@@ -539,15 +539,35 @@ test.describe('renderIssueChart', () => {
     expect(Math.abs(mids[0].x - mids[1].x)).toBeGreaterThan(0); // and are spread apart in x
   });
 
-  test('the header reads "· N issues · span", without the word "history" that made it wrap on a phone', async ({ page }) => {
+  test('the header splits the issue count into bugs/features/misc, colored like the chart, and fits one line on a phone', async ({ page }) => {
+    // It used to read "· 3 issues": one total that hid how it split across
+    // the three categories. "history" and then "issues" were dropped to keep
+    // the header on one line on a phone; the section label already says Issues.
     await page.evaluate(() => renderIssueChart({
       days: ['2024-04-04', '2026-09-01'],
       bugs:  [{ count: 1, opens: 1, closes: 0 }, { count: 2, opens: 1, closes: 0 }],
       feats: [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
-      misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 0, opens: 0, closes: 0 }],
-      total: 2,
+      misc:  [{ count: 0, opens: 0, closes: 0 }, { count: 1, opens: 1, closes: 0 }],
+      total: 3,
     }));
-    await expect(page.locator('#issueRange')).toHaveText(/^· 2 issues · \d+(\.\d)?yr$/);
+    await expect(page.locator('#issueRange')).toHaveText(/^· 2\/0\/1 · \d+(\.\d)?yr$/);
+    const parts = await page.locator('#issueRange .issue-split > span:not(.ic-sep)').evaluateAll(els =>
+      els.map(e => ({ text: e.textContent, cls: e.className })));
+    expect(parts).toEqual([
+      { text: '2', cls: 'ic-bug' },
+      { text: '0', cls: 'ic-feat zero' },
+      { text: '1', cls: 'ic-misc' },
+    ]);
+
+    // Three-digit counts on a phone still fit on one line.
+    await page.setViewportSize({ width: 390, height: 800 });
+    const lines = await page.evaluate(() => {
+      const mk = n => [{ count: n, opens: n, closes: 0 }];
+      renderIssueChart({ days: ['2020-07-01'], bugs: mk(192), feats: mk(100), misc: mk(132), total: 424 });
+      const lbl = document.querySelector('#issueTrendSection .traffic-label');
+      return Math.round(lbl.getBoundingClientRect().height / parseFloat(getComputedStyle(lbl).lineHeight || '0') || 0);
+    });
+    expect(lines).toBe(1);
   });
 
   test('shows a message and hides the chart when there is no data', async ({ page }) => {
