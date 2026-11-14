@@ -5,6 +5,8 @@ const { test, expect } = require('@playwright/test');
 // of the three pieces had any check that they actually stay wired together.
 
 test.describe('PWA support', () => {
+  test.use({ serviceWorkers: 'allow' }); // the rest of the suite blocks it (playwright.config.js)
+
   test('manifest.json is valid and linked from index.html', async ({ page, request }) => {
     await page.goto('/index.html');
     const href = await page.locator('link[rel="manifest"]').getAttribute('href');

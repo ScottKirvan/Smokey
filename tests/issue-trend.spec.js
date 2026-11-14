@@ -445,7 +445,7 @@ test.describe('renderIssueChart', () => {
 
   test('legend swatches use each category\'s bright core color, matching the spikes rather than the dark lines', async ({ page }) => {
     const swatches = await page.evaluate(() =>
-      [...document.querySelectorAll('.issue-legend .legend-swatch')].map(s => s.getAttribute('style')));
+      [...document.querySelectorAll('#issueTrendSection .issue-legend .legend-swatch')].map(s => s.getAttribute('style')));
     expect(swatches).toEqual(['background:var(--bug-core)', 'background:var(--feat-core)', 'background:var(--misc-core)']);
   });
 

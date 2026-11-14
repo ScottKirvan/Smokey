@@ -12,6 +12,11 @@ module.exports = defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
+    // The app's service worker fetches non-API requests itself, and requests a
+    // service worker makes bypass page.route(), so gotoQuiet()'s blocking of
+    // raw.githubusercontent.com leaked real traffic-log and star data into
+    // tests. pwa.spec.js allows it again to check that it registers.
+    serviceWorkers: 'block',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
