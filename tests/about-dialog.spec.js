@@ -25,12 +25,20 @@ test.describe('About dialog', () => {
     await page.locator('header button[title="About Smokey"]').click();
     await expect(page.locator('#aboutOverlay')).toBeVisible();
     await expect(page.locator('.about-name')).toHaveText('Smokey');
-    await expect(page.locator('.about-logo')).toHaveAttribute('src', 'assets/media/logo.jpg');
+    await expect(page.locator('.about-logo')).toHaveAttribute('src', 'assets/media/Smokey-Head.png');
     await expect(page.locator('.about-version')).toHaveText(`Version ${VERSION}`);
-    expect(await page.evaluate(() => {
+    // The bear head isn't square and has a transparent background, so it's shown
+    // whole at the logo height instead of cropped into BojuBot's rounded square.
+    const logo = await page.evaluate(() => {
       const img = document.querySelector('.about-logo');
-      return img.complete && img.naturalWidth > 0;
-    })).toBe(true);
+      const r = img.getBoundingClientRect(), cs = getComputedStyle(img);
+      return { loaded: img.complete && img.naturalWidth > 0, h: r.height, ratio: r.width / r.height,
+        natural: img.naturalWidth / img.naturalHeight, radius: cs.borderTopLeftRadius, fit: cs.objectFit };
+    });
+    expect(logo.loaded).toBe(true);
+    expect(logo.h).toBe(144);
+    expect(logo.ratio).toBeCloseTo(logo.natural, 2);
+    expect(logo.radius).toBe('0px');
   });
 
   test('has the Documentation, Report a problem and Buy me a coffee cards', async ({ page }) => {
