@@ -1,7 +1,7 @@
 ﻿# Smokey [![starline](https://raw.githubusercontent.com/ScottKirvan/Smokey/refs/heads/starlines/ScottKirvan/Smokey/starline.svg)](https://github.com/qoomon/starlines)
 <div align="center">
 
-  <img src="assets/media/logo.jpg" alt="logo" width="200" height="auto" />
+  <img src="assets/media/Smokey-Head.png" alt="logo" width="200" height="auto" />
     <h1><a href="https://github.com/ScottKirvan/Smokey">ScottKirvan/Smokey</a></h1>
   <h3>GitHub repo health at a glance — no login required for public repos</h3>
   
