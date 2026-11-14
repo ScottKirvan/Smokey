@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.6.0](https://github.com/ScottKirvan/Smokey/compare/v0.5.0...v0.6.0) (2026-11-14)
+
+
+### Features
+
+* add an About dialog modelled on BojuBot's ([6bfbc52](https://github.com/ScottKirvan/Smokey/commit/6bfbc52fb470f174a6d3b555eff279ad0cf43515)), closes [#4](https://github.com/ScottKirvan/Smokey/issues/4)
+* ignore automated branches in Last push when a PAT is set ([13f7188](https://github.com/ScottKirvan/Smokey/commit/13f7188dbe409c5dbd3e056f246e186c2013b033))
+* link the About dialog's support card to GitHub Sponsors ([a1e1463](https://github.com/ScottKirvan/Smokey/commit/a1e146360213e203274e53b424754f281a9ee469))
+* refresh the dashboard in the background instead of waiting for a reload ([5d086d1](https://github.com/ScottKirvan/Smokey/commit/5d086d1cde5af0d0bf3c9c483c5449ad00ec60d8))
+* show the Smokey bear head in the About dialog ([878b397](https://github.com/ScottKirvan/Smokey/commit/878b397451363027ff69bc70a75f0861ca6dd9f1))
+* split the issue chart's header count into bugs/features/misc ([1eee1e1](https://github.com/ScottKirvan/Smokey/commit/1eee1e10a31ae44f51f0499e0d4ab92be9efcb56))
+* use the Smokey bear as the favicon, app icon and header logo ([cf0aa04](https://github.com/ScottKirvan/Smokey/commit/cf0aa045a537f912ee0726e91bf6b185c4554904)), closes [#19](https://github.com/ScottKirvan/Smokey/issues/19)
+
+
+### Bug Fixes
+
+* flag GitHubDHC's automated Obsidian-update issues for attention ([931e18f](https://github.com/ScottKirvan/Smokey/commit/931e18f576e76e4e0f13de0a037b9257309254e3))
+* flag in-app bug reports for attention even though a bot files them ([b41db75](https://github.com/ScottKirvan/Smokey/commit/b41db75d46d18c81939bf0cde80bbb112f96e8d0))
+* keep repo data visible without a PAT when GitHub's rate limit runs out ([c8c5f66](https://github.com/ScottKirvan/Smokey/commit/c8c5f6699273dbc630da03e5759d8fc511719706)), closes [#38](https://github.com/ScottKirvan/Smokey/issues/38)
+* keep the charts working when every repo call is rate-limited ([1cc3ba8](https://github.com/ScottKirvan/Smokey/commit/1cc3ba8fc58dfd995109ab23ac787195d22b5a81)), closes [#38](https://github.com/ScottKirvan/Smokey/issues/38)
+* pin the test job to Ubuntu 24.04 ([fdf0514](https://github.com/ScottKirvan/Smokey/commit/fdf051446f40cfdbf276c3b44dfc74eddaba71cf))
+* put BojuBot's Discord card back in the About dialog ([d481260](https://github.com/ScottKirvan/Smokey/commit/d48126081165cc315c0d413ddb5d907fbb11639b))
+* report iPadOS in the About dialog instead of macOS on an iPad ([bcf9d4b](https://github.com/ScottKirvan/Smokey/commit/bcf9d4b0619f9332f887f8959f7b4774432e3e0c))
+
 ## [0.5.0](https://github.com/ScottKirvan/Smokey/compare/v0.4.0...v0.5.0) (2026-10-11)
 
 
