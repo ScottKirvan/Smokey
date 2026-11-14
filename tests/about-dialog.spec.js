@@ -99,6 +99,22 @@ test.describe('About dialog', () => {
 });
 
 test.describe('clientParts', () => {
+  test('an iPad reports iPadOS, though Safari on iPad identifies itself as a Mac', async ({ page }) => {
+    await gotoQuiet(page);
+    const ipadDesktopUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15';
+    const out = await page.evaluate((ua) => [
+      clientParts(ua, true, 5),
+      clientParts(ua, false, 0),
+      clientParts('Mozilla/5.0 (iPad; CPU OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1', true, 5),
+    ], ipadDesktopUA);
+    expect(out).toEqual([
+      ['Safari 18', 'iPadOS', 'installed app'],
+      ['Safari 18', 'macOS', 'browser tab'],
+      ['Safari 18', 'iPadOS', 'installed app'],
+    ]);
+  });
+
+
   test.beforeEach(async ({ page }) => { await gotoQuiet(page); });
 
   test('names the browser, OS and display mode', async ({ page }) => {

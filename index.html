@@ -1554,7 +1554,7 @@ const ABOUT_FOOTER = [
 
 // Smokey has no build step, so where BojuBot shows its build, this shows what
 // a bug report needs instead: browser, OS, and installed app vs. browser tab.
-function clientParts(ua, standalone) {
+function clientParts(ua, standalone, touchPoints = 0) {
   const m = (re) => (ua.match(re) || [])[1];
   const browser = m(/Edg\/(\d+)/) ? `Edge ${m(/Edg\/(\d+)/)}`
     : m(/OPR\/(\d+)/) ? `Opera ${m(/OPR\/(\d+)/)}`
@@ -1562,8 +1562,10 @@ function clientParts(ua, standalone) {
     : m(/Chrome\/(\d+)/) ? `Chrome ${m(/Chrome\/(\d+)/)}`
     : m(/Version\/(\d+).*Safari/) ? `Safari ${m(/Version\/(\d+).*Safari/)}`
     : 'Unknown browser';
+  // Safari on iPad identifies itself as a Mac by default; a Mac has no touchscreen.
   const os = /Android/.test(ua) ? 'Android'
-    : /iPhone|iPad|iPod/.test(ua) ? 'iOS'
+    : /iPad/.test(ua) || (/Macintosh/.test(ua) && touchPoints > 1) ? 'iPadOS'
+    : /iPhone|iPod/.test(ua) ? 'iOS'
     : /Windows/.test(ua) ? 'Windows'
     : /Mac OS X/.test(ua) ? 'macOS'
     : /CrOS/.test(ua) ? 'ChromeOS'
@@ -1571,7 +1573,7 @@ function clientParts(ua, standalone) {
   return [browser, os, standalone ? 'installed app' : 'browser tab'];
 }
 function aboutClientParts() {
-  return clientParts(navigator.userAgent, matchMedia('(display-mode: standalone)').matches || navigator.standalone === true);
+  return clientParts(navigator.userAgent, matchMedia('(display-mode: standalone)').matches || navigator.standalone === true, navigator.maxTouchPoints || 0);
 }
 
 function openAbout() {
