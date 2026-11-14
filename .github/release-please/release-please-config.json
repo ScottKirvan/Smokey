@@ -7,7 +7,8 @@
     ".": {
       "initial-version": "0.0.0",
       "extra-files": [
-        "notes/VERSION.md"
+        "notes/VERSION.md",
+        "index.html"
       ]
     }
   }
