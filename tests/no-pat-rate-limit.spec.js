@@ -98,3 +98,36 @@ test.describe('rendering a rate-limited load', () => {
     expect(summary).toContain('rate limited: 1 repo from saved data');
   });
 });
+
+test.describe('charts when every repo call is refused', () => {
+  test.beforeEach(async ({ page }) => { await gotoQuiet(page); });
+
+  // The charts' data doesn't come from the refused API calls: the traffic log
+  // and star files are public files, and the issue history is cached locally.
+  // They used to take their repo list from successful fetchRepo() results only,
+  // so a fully rate-limited load emptied all three.
+  test('traffic, stars and the cached issue history still render', async ({ page }) => {
+    const out = await page.evaluate(async () => {
+      S.data = [{ full_name: 'ScottKirvan/Smokey', error: 'rate' }, { full_name: 'ScottKirvan/BojuBot', error: 'rate' }];
+      const now = Date.now();
+      window.fetch = async (url) => {
+        url = String(url);
+        if (url.includes('traffic-log/views.csv')) return { ok: true, text: async () => 'repo,date,views,unique_visitors\nScottKirvan/Smokey,2026-11-01,7,2\n' };
+        if (url.includes('starline-cache.json')) return { ok: true, json: async () => [now - 86400000] };
+        return { ok: false, status: 403, headers: { get: () => null }, json: async () => ({}) };
+      };
+      localStorage.setItem(ISSUE_CACHE, JSON.stringify({ 'ScottKirvan/BojuBot': { 1: { c: '2026-10-01T00:00:00Z', x: null, t: 'bug' } } }));
+      await loadTraffic();
+      await loadStars({});
+      await loadIssueHistory();
+      return {
+        traffic: document.getElementById('trafficTotal').textContent,
+        stars: document.getElementById('starRange').textContent,
+        issues: document.getElementById('issueRange').textContent,
+      };
+    });
+    expect(out.traffic).toBe('7 views · 2 unique');
+    expect(out.stars).toBe('· 2 stars · new per quarter');
+    expect(out.issues).toMatch(/^· 1\/0\/0 · /);
+  });
+});

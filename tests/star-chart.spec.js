@@ -10,7 +10,7 @@ async function gotoQuiet(page) {
   await page.route(/^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//, r => r.abort());
   await page.goto('/index.html');
   await page.waitForFunction(() =>
-    !document.getElementById('refreshBtn').classList.contains('spinning') && !starLoading);
+    !document.getElementById('refreshBtn').classList.contains('spinning') && !starLoading && !issueLoading);
 }
 
 const DAY = 86400000;

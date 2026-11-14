@@ -783,6 +783,12 @@ function saveRepoCache(fullName, data) {
 }
 const isRateLimited = res => res.status === 403 || res.status === 429;
 
+// The repo names the charts read, one per S.data entry: the canonical
+// full_name fetchRepo() resolved, or, when it failed (rate limit, network),
+// the Settings entry it was called with. The charts' data doesn't come from
+// those failed calls, so a failure mustn't empty them (#38).
+function chartRepoNames() { return S.data.map(d => d.full_name); }
+
 async function fetchRepo(fullName, headers) {
   const base = `https://api.github.com/repos/${fullName}`;
   try {
@@ -1043,9 +1049,9 @@ async function loadStars(headers) {
   if (starLoading) return;
   starLoading = true;
   try {
-    // Canonical names from fetchRepo(), never raw S.repos strings: the
-    // starlines folder is keyed by the repo's current name.
-    const repos = S.data.filter(d => !d.error);
+    // Canonical names from fetchRepo() (see chartRepoNames()), never raw
+    // S.repos strings: the starlines folder is keyed by the repo's current name.
+    const repos = S.data;
     const arrs  = await Promise.all(repos.map(d => fetchStarline(d, headers)));
     const starsByRepo = {};
     repos.forEach((d, i) => { if (arrs[i]) starsByRepo[d.full_name] = arrs[i]; });
@@ -1158,7 +1164,7 @@ async function loadTraffic() {
     // S.repos strings — a renamed repo's Settings entry is stale and would
     // otherwise silently drop that repo's traffic (same bug class as
     // pollEvents(), see repo-rename-drift.spec.js).
-    const names = new Set(S.data.filter(d => !d.error).map(d => d.full_name));
+    const names = new Set(chartRepoNames());
     const monitored = rows.filter(row => names.has(row.repo));
     renderChart(aggregateTrafficHistory(monitored));
   } catch(e) {
@@ -1791,7 +1797,7 @@ async function loadIssueHistory() {
   } catch(e) {}
 
   // Render immediately from cache so the chart appears without waiting for API
-  const monitored = new Set(S.data.filter(d => !d.error).map(d => d.full_name));
+  const monitored = new Set(chartRepoNames());
   // One sweep per load() run (page load, refresh, settings save), on the
   // first render that has data — not again on the re-render after the fetch.
   let swept = false;
