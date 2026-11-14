@@ -685,10 +685,12 @@ function renderRateLimit() {
   el.style.display = '';
 }
 
-// In-app bug reports are filed by a relay app (a bot), so the bot filter below
-// would hide them; the label they carry marks them as needing attention.
-const USER_REPORT_LABEL = 'user-report';
-const isUserReport = i => (i.labels || []).some(l => l.name === USER_REPORT_LABEL);
+// Some issues that need attention are filed by bots, so the bot filter below
+// would hide them: in-app bug reports (BojuBot's report relay app) and
+// GitHubDHC's automated Obsidian-update check (github-actions). Their labels
+// mark them instead.
+const ATTENTION_LABELS = ['user-report', 'obsidian-update'];
+const hasAttentionLabel = i => (i.labels || []).some(l => ATTENTION_LABELS.includes(l.name));
 
 async function fetchRepo(fullName, headers) {
   const base = `https://api.github.com/repos/${fullName}`;
@@ -710,7 +712,7 @@ async function fetchRepo(fullName, headers) {
     const me      = S.currentUser || owner;
     const isBot   = u => !u || u.type === 'Bot' || u.login?.endsWith('[bot]');
     const extPRs  = prs.filter(p => p.user?.login !== me && !isBot(p.user));
-    const extI    = issues.filter(i => (i.user?.login !== me && !isBot(i.user)) || isUserReport(i));
+    const extI    = issues.filter(i => (i.user?.login !== me && !isBot(i.user)) || hasAttentionLabel(i));
     const issue_split = { bug: 0, feat: 0, misc: 0 };
     for (const i of issues) issue_split[issueCategory((i.labels || []).map(l => l.name))]++;
     return {
@@ -1081,7 +1083,8 @@ function renderBadges(data) {
       const [owner, name] = d.full_name.split('/');
       const label  = S.showOrg ? `${owner}/${name}` : name;
       const count  = type === 'pr' ? d.external_prs : d.external_issues;
-      const botFilter = `-author%3Aapp%2Frelease-please+-author%3Agithub-actions%5Bbot%5D`;
+      // Issues github-actions files can carry an attention label, so only the PR list hides it.
+      const botFilter = type === 'pr' ? `-author%3Aapp%2Frelease-please+-author%3Agithub-actions%5Bbot%5D` : '';
       const filter = (user ? `-author%3A${user}+` : '') + botFilter;
       const url    = type === 'pr'
         ? `https://github.com/${d.full_name}/pulls?q=is%3Aopen+is%3Apr+${filter}`

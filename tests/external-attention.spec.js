@@ -6,7 +6,8 @@ const { test, expect } = require('@playwright/test');
 // keep repos flagged forever). The exception is an in-app bug report: BojuBot's
 // report form files issues through a GitHub App (scott-kirvan-reports[bot])
 // with the `user-report` label, and those must be flagged even though a bot
-// filed them.
+// filed them. The same goes for GitHubDHC's automated Obsidian-update check,
+// which files issues as github-actions[bot] with the `obsidian-update` label.
 
 async function gotoQuiet(page) {
   await page.route(/^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//, r => r.abort());
@@ -37,6 +38,25 @@ test.describe('external attention counts', () => {
   test('an in-app bug report filed by the report relay app is flagged', async ({ page }) => {
     const d = await fetchWith(page, [issue('scott-kirvan-reports[bot]', 'Bot', ['bug', 'user-report'])]);
     expect(d.external_issues).toBe(1);
+  });
+
+  test('an automated Obsidian-update issue from GitHubDHC\'s workflow is flagged', async ({ page }) => {
+    const d = await fetchWith(page, [issue('github-actions[bot]', 'Bot', ['obsidian-update'])]);
+    expect(d.external_issues).toBe(1);
+  });
+
+  test('the attention badge\'s issue link doesn\'t hide issues github-actions filed, but the PR link still does', async ({ page }) => {
+    const links = await page.evaluate(() => {
+      S.currentUser = 'ScottKirvan';
+      renderBadges([{ full_name: 'ScottKirvan/GitHubDHC', external_prs: 1, external_issues: 1 }]);
+      return {
+        issue: decodeURIComponent(document.querySelector('#issueBadges .shield').getAttribute('href')),
+        pr: decodeURIComponent(document.querySelector('#prBadges .shield').getAttribute('href')),
+      };
+    });
+    expect(links.issue).toContain('-author:ScottKirvan');
+    expect(links.issue).not.toContain('github-actions');
+    expect(links.pr).toContain('-author:github-actions[bot]');
   });
 
   test('other bot-filed issues are still ignored', async ({ page }) => {
