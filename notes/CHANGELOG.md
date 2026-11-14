@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/ScottKirvan/Smokey/compare/v0.6.0...v0.7.0) (2026-11-14)
+
+
+### Features
+
+* count Dependabot PRs for attention and order badges newest first ([4317807](https://github.com/ScottKirvan/Smokey/commit/4317807819887676ca64449c242ba5bde6253579))
+
 ## [0.6.0](https://github.com/ScottKirvan/Smokey/compare/v0.5.0...v0.6.0) (2026-11-14)
 
 
