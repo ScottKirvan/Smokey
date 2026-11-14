@@ -41,7 +41,7 @@ test.describe('About dialog', () => {
     expect(logo.radius).toBe('0px');
   });
 
-  test('has BojuBot\'s four cards: Documentation, Discord, Report a problem and Buy me a coffee', async ({ page }) => {
+  test('has four cards: Documentation, Discord, Report a problem and Support Smokey', async ({ page }) => {
     await page.evaluate(() => openAbout());
     const cards = await page.locator('.about-item').evaluateAll(rows => rows.map(r => {
       const a = r.querySelector('.about-item-btn');
@@ -55,7 +55,7 @@ test.describe('About dialog', () => {
       { title: 'Documentation', label: 'Visit', href: 'https://github.com/ScottKirvan/Smokey#readme', accent: true, target: '_blank', rel: 'noopener' },
       { title: 'Get help on Discord', label: 'Join', href: 'https://discord.gg/TN6XJSNK5Y', accent: false, target: '_blank', rel: 'noopener' },
       { title: 'Report a problem', label: 'Report', href: 'https://github.com/ScottKirvan/Smokey/issues/new/choose', accent: false, target: '_blank', rel: 'noopener' },
-      { title: 'Buy me a coffee', label: 'Give', href: 'https://ko-fi.com/scottkirvan', accent: false, target: '_blank', rel: 'noopener' },
+      { title: 'Support Smokey', label: 'Give', href: 'https://github.com/sponsors/ScottKirvan', accent: false, target: '_blank', rel: 'noopener' },
     ]);
     await expect(page.locator('.about-item-icon svg')).toHaveCount(4);
   });
