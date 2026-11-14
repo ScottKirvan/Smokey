@@ -695,18 +695,31 @@ function init() {
   applySweepSetting();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   setInterval(updateSummaryTime, 60000);
+  setInterval(backstopTick, 60000);
+  document.addEventListener('visibilitychange', onVisibilityChange);
   load();
 }
 
 // ── Load ──────────────────────────────────────────────
+function apiHeaders() {
+  return S.pat
+    ? { Authorization: `token ${S.pat}`, Accept: 'application/vnd.github.v3+json' }
+    : { Accept: 'application/vnd.github.v3+json' };
+}
+
+// Background refreshes wait while a load runs; the finally keeps a load that
+// throws from blocking them for the rest of the session.
+let loadRunning = false;
 async function load() {
+  loadRunning = true;
+  try { await loadAll(); } finally { loadRunning = false; }
+}
+async function loadAll() {
   setSpinning(true);
   setPip('');
   renderSkeleton(S.repos.length || 8);
 
-  const headers = S.pat
-    ? { Authorization: `token ${S.pat}`, Accept: 'application/vnd.github.v3+json' }
-    : { Accept: 'application/vnd.github.v3+json' };
+  const headers = apiHeaders();
 
   // Resolve current user (needed for the external-contributor filter and the
   // feed's /users/{username}/events URL). pollEvents() also retries this
@@ -720,6 +733,7 @@ async function load() {
   // succeeds, but a stale name no longer matches d.full_name for matching).
   S.data = await Promise.all(S.repos.map(r => fetchRepo(r, headers)));
   S.loadedAt = new Date();
+  S.data.forEach(d => { d.fetched_at = S.loadedAt.toISOString(); });
 
   await loadTraffic(); // no PAT needed — public CSV
   loadStars(headers); // async, renders the star chart when its files arrive
@@ -735,21 +749,109 @@ async function load() {
         Promise.all(S.repos.map(r => fetchWorkflowRuns(r, headers))),
         Promise.all(S.repos.map(r => fetchLastPush(r, headers))),
       ]);
-      S.data.forEach((d, i) => {
-        d.ci = ciArr[i];
-        if (pushArr[i] && !d.error) { d.pushed_at = pushArr[i].at; d.push_beyond = pushArr[i].beyond; d.push_filtered = true; }
-      });
+      S.data.forEach((d, i) => applyPatExtras(d, ciArr[i], pushArr[i]));
     } catch(e) {
       console.error('PAT-gated fetch failed:', e);
     }
     if (S.showFeed) startFeedPoll();
     if (S.showNotifs) startNotifPoll();
+    startRepoEventPoll();
   }
 
   setPip('live');
   setSpinning(false);
   renderAll();
   loadIssueHistory(); // async, updates chart in background
+}
+
+function applyPatExtras(d, ci, push) {
+  d.ci = ci;
+  if (push && !d.error) { d.pushed_at = push.at; d.push_beyond = push.beyond; d.push_filtered = true; }
+}
+
+// ── Live refresh ──────────────────────────────────────
+// Smokey has no server, so it can't receive GitHub's webhooks. Instead it
+// refreshes itself: when the page becomes visible with stale data, when a
+// repo's own event feed shows something that changes its row (PAT only), and
+// on a 10-minute backstop (PAT only; CI runs aren't in the event feeds).
+// A background refresh updates rows in place: no skeleton, no sweep.
+const STALE_MS_PAT    = 2 * 60000;
+const STALE_MS_NO_PAT = 15 * 60000;  // protects the 60-calls-an-hour limit
+const BACKSTOP_MS     = 10 * 60000;
+const ROW_EVENT_TYPES = new Set(['PushEvent', 'PullRequestEvent', 'IssuesEvent', 'ReleaseEvent', 'CreateEvent', 'DeleteEvent']);
+let refreshRunning = false;
+let repoEventTimer = null;
+let repoEventEtags = [];  // index-aligned with S.repos
+
+const dataAgeMs = () => S.loadedAt ? Date.now() - S.loadedAt.getTime() : Infinity;
+const pageVisible = () => document.visibilityState === 'visible';
+
+// Re-fetches the given rows (indexes into S.repos / S.data) in place.
+async function refreshRepos(indexes) {
+  const headers = apiHeaders();
+  const [rows, ci, push] = await Promise.all([
+    Promise.all(indexes.map(i => fetchRepo(S.repos[i], headers))),
+    S.pat ? Promise.all(indexes.map(i => fetchWorkflowRuns(S.repos[i], headers))) : null,
+    S.pat ? Promise.all(indexes.map(i => fetchLastPush(S.repos[i], headers))) : null,
+  ]);
+  const now = new Date().toISOString();
+  indexes.forEach((i, k) => {
+    const d = rows[k];
+    if (ci) applyPatExtras(d, ci[k], push[k]);
+    d.fetched_at = now;
+    S.data[i] = d;
+  });
+  renderAll();
+}
+
+async function quietRefresh(indexes) {
+  if (loadRunning || refreshRunning || !S.data.length) return;
+  refreshRunning = true;
+  try {
+    const all = !indexes;
+    await refreshRepos(all ? S.repos.map((_, i) => i) : indexes);
+    if (all) S.loadedAt = new Date();
+    loadIssueHistory({ sweep: false });
+  } finally {
+    refreshRunning = false;
+  }
+}
+
+function onVisibilityChange() {
+  if (pageVisible() && dataAgeMs() > (S.pat ? STALE_MS_PAT : STALE_MS_NO_PAT)) quietRefresh();
+}
+
+function backstopTick() {
+  if (S.pat && pageVisible() && dataAgeMs() > BACKSTOP_MS) quietRefresh();
+}
+
+// Each repo's own event feed, polled with its ETag: GitHub doesn't count an
+// authenticated 304 against the rate limit, so an unchanged feed is free.
+async function pollRepoEvents() {
+  if (!S.pat || !pageVisible() || loadRunning || !S.data.length) return;
+  const headers = apiHeaders();
+  const stale = [];
+  await Promise.all(S.repos.map(async (r, i) => {
+    try {
+      const h = repoEventEtags[i] ? { ...headers, 'If-None-Match': repoEventEtags[i] } : headers;
+      const res = await fetch(`https://api.github.com/repos/${r}/events?per_page=30`, { headers: h });
+      if (res.status === 304 || !res.ok) return;
+      repoEventEtags[i] = res.headers.get('ETag') || repoEventEtags[i];
+      const since = new Date(S.data[i]?.fetched_at || S.loadedAt || 0).getTime();
+      const events = await res.json();
+      if (events.some(ev => ROW_EVENT_TYPES.has(ev.type) && new Date(ev.created_at).getTime() > since)) stale.push(i);
+    } catch(e) {}
+  }));
+  if (stale.length) quietRefresh(stale.sort((a, b) => a - b));
+}
+
+function startRepoEventPoll() {
+  if (!S.pat || repoEventTimer) return;
+  repoEventTimer = setInterval(pollRepoEvents, 60000);
+}
+function stopRepoEventPoll() {
+  if (repoEventTimer) { clearInterval(repoEventTimer); repoEventTimer = null; }
+  repoEventEtags = [];
 }
 
 // ── Rate limit ────────────────────────────────────────
@@ -1413,6 +1515,7 @@ function saveConfig() {
   } catch(e) {}
   stopFeedPoll();  // always clear before potentially re-starting
   stopNotifPoll();
+  stopRepoEventPoll();
   if (!showFeed) document.getElementById('feedSection').style.display = 'none';
   if (!showNotifs) document.getElementById('notifSection').style.display = 'none';
   S.pat = newPat; S.repos = newRepos; S.showOrg = showOrg; S.showFeed = showFeed; S.showNotifs = showNotifs;
@@ -1831,7 +1934,7 @@ function issueCategory(labelNames) {
        : labelNames.includes('enhancement') ? 'feat' : 'misc';
 }
 
-async function loadIssueHistory() {
+async function loadIssueHistory({ sweep = true } = {}) {
   if (issueLoading) return;
   issueLoading = true;
   let cache = {}, sync = {};
@@ -1844,7 +1947,7 @@ async function loadIssueHistory() {
   const monitored = new Set(chartRepoNames());
   // One sweep per load() run (page load, refresh, settings save), on the
   // first render that has data — not again on the re-render after the fetch.
-  let swept = false;
+  let swept = !sweep;
   const show = () => {
     const series = buildIssueSeries(cache, monitored);
     renderIssueChart(series);
