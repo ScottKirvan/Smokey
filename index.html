@@ -883,6 +883,8 @@ function renderRateLimit() {
 // GitHubDHC's automated Obsidian-update check (github-actions). Their labels
 // mark them instead.
 const ATTENTION_LABELS = ['user-report', 'obsidian-update'];
+// Bots whose PRs and issues count like a person's (QuKi-Notes' Dependabot PRs).
+const ATTENTION_BOTS = ['dependabot[bot]'];
 const hasAttentionLabel = i => (i.labels || []).some(l => ATTENTION_LABELS.includes(l.name));
 
 // Each repo's last good fetchRepo() result, keyed by its Settings entry, shown
@@ -929,8 +931,10 @@ async function fetchRepo(fullName, headers) {
     const owner   = fullName.split('/')[0];
     const me      = S.currentUser || owner;
     const isBot   = u => !u || u.type === 'Bot' || u.login?.endsWith('[bot]');
-    const extPRs  = prs.filter(p => p.user?.login !== me && !isBot(p.user));
-    const extI    = issues.filter(i => (i.user?.login !== me && !isBot(i.user)) || hasAttentionLabel(i));
+    const fromOutside = u => (u?.login !== me && !isBot(u)) || ATTENTION_BOTS.includes(u?.login);
+    const extPRs  = prs.filter(p => fromOutside(p.user));
+    const extI    = issues.filter(i => fromOutside(i.user) || hasAttentionLabel(i));
+    const newest  = items => items.reduce((max, i) => (i.created_at && (!max || i.created_at > max) ? i.created_at : max), null);
     const issue_split = { bug: 0, feat: 0, misc: 0 };
     for (const i of issues) issue_split[issueCategory((i.labels || []).map(l => l.name))]++;
     const data = {
@@ -938,6 +942,7 @@ async function fetchRepo(fullName, headers) {
       latest_release: release?.tag_name ? { tag_name: release.tag_name, published_at: release.published_at } : null,
       open_prs: prs.length, external_prs: extPRs.length,
       open_issues: issues.length, external_issues: extI.length, issue_split,
+      newest_ext_pr_at: newest(extPRs), newest_ext_issue_at: newest(extI),
     };
     saveRepoCache(fullName, data);
     return data;
@@ -1320,8 +1325,11 @@ function renderBadges(data) {
   const user   = S.currentUser || '';
   const section = document.getElementById('attnSection');
 
-  const prItems    = valid.filter(d => d.external_prs    > 0);
-  const issueItems = valid.filter(d => d.external_issues > 0);
+  // Newest outside item on the left; repos without a date (saved before it
+  // was recorded) go last.
+  const byNewest = key => (a, b) => (b[key] || '').localeCompare(a[key] || '');
+  const prItems    = valid.filter(d => d.external_prs    > 0).sort(byNewest('newest_ext_pr_at'));
+  const issueItems = valid.filter(d => d.external_issues > 0).sort(byNewest('newest_ext_issue_at'));
   section.hidden   = prItems.length === 0 && issueItems.length === 0;
 
   function makeBadges(items, type) {

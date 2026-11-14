@@ -83,3 +83,44 @@ test.describe('external attention counts', () => {
     expect(rendered.rowFlagged).toBe(true);
   });
 });
+
+// QuKi-Notes gets Dependabot PRs, which the bot filter hid. Bots in
+// ATTENTION_BOTS count like people; other bots are still ignored.
+test.describe('Dependabot and badge order', () => {
+  test.beforeEach(async ({ page }) => { await gotoQuiet(page); });
+
+  test('a Dependabot PR needs attention; other bot PRs still don\'t', async ({ page }) => {
+    const d = await fetchWith(page, [], [
+      { ...issue('dependabot[bot]', 'Bot'), created_at: '2026-11-10T00:00:00Z' },
+      { ...issue('renovate[bot]', 'Bot'), created_at: '2026-11-11T00:00:00Z' },
+    ]);
+    expect(d.external_prs).toBe(1);
+    expect(d.newest_ext_pr_at).toBe('2026-11-10T00:00:00Z');
+  });
+
+  test('records the newest outside PR and issue, ignoring ones that don\'t need attention', async ({ page }) => {
+    const d = await fetchWith(page,
+      [{ ...issue('someone', 'User'), created_at: '2026-11-01T00:00:00Z' }, { ...issue('someone', 'User'), created_at: '2026-11-05T00:00:00Z' },
+       { ...issue('ScottKirvan', 'User'), created_at: '2026-11-09T00:00:00Z' }],
+      [{ ...issue('someone', 'User'), created_at: '2026-11-03T00:00:00Z' }]);
+    expect(d.newest_ext_issue_at).toBe('2026-11-05T00:00:00Z');
+    expect(d.newest_ext_pr_at).toBe('2026-11-03T00:00:00Z');
+  });
+
+  test('each badge row puts the repo with the newest outside item on the left', async ({ page }) => {
+    const order = await page.evaluate(() => {
+      const repo = (name, prAt, issueAt) => ({ full_name: `ScottKirvan/${name}`, external_prs: prAt ? 1 : 0, external_issues: issueAt ? 1 : 0,
+        newest_ext_pr_at: prAt, newest_ext_issue_at: issueAt });
+      renderBadges([
+        repo('Old', '2026-10-01T00:00:00Z', '2026-11-12T00:00:00Z'),
+        repo('QuKi-Notes', '2026-11-13T00:00:00Z', null),
+        repo('Mid', '2026-11-01T00:00:00Z', '2026-11-02T00:00:00Z'),
+        { full_name: 'ScottKirvan/Cached', external_prs: 1, external_issues: 0 }, // saved before these dates existed
+      ]);
+      const names = sel => [...document.querySelectorAll(`${sel} .shield-name`)].map(e => e.textContent);
+      return { prs: names('#prBadges'), issues: names('#issueBadges') };
+    });
+    expect(order.prs).toEqual(['QuKi-Notes', 'Mid', 'Old', 'Cached']);
+    expect(order.issues).toEqual(['Old', 'Mid']);
+  });
+});
