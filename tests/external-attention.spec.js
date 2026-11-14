@@ -24,8 +24,8 @@ async function fetchWith(page, issues, prs = []) {
     window.fetch = async (url) => {
       url = String(url);
       if (url.endsWith('/repos/ScottKirvan/BojuBot')) return { ok: true, headers: { get: () => null }, json: async () => ({ full_name: 'ScottKirvan/BojuBot', pushed_at: '2026-10-28T00:00:00Z' }) };
-      if (url.includes('/issues')) return { ok: true, json: async () => issues };
-      if (url.includes('/pulls')) return { ok: true, json: async () => prs };
+      // /issues returns PRs too (items with a pull_request key), as GitHub does.
+      if (url.includes('/issues')) return { ok: true, json: async () => issues.concat(prs.map(p => ({ ...p, pull_request: {} }))) };
       return { ok: false, status: 404 };
     };
     return fetchRepo('ScottKirvan/BojuBot', {});

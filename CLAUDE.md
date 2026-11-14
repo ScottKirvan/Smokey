@@ -37,11 +37,15 @@ const S = {
 };
 ```
 
-localStorage keys: `rw_pat`, `rw_repos`, `rw_show_org`, `rw_feed`, `rw_notifs`, `rw_sort_by`, `rw_sort_dir`, `rw_issues_v1` (issue cache), `rw_sync_v1` (per-repo issue sync timestamps), `rw_sweep_anim` (issue chart animation; on unless set to `'0'`), `rw_star_colors_v2` (star chart repo→color slot map), `rw_star_shown` (star chart colored-repo count, 1–8, default 4).
+localStorage keys: `rw_pat`, `rw_repos`, `rw_show_org`, `rw_feed`, `rw_notifs`, `rw_sort_by`, `rw_sort_dir`, `rw_issues_v1` (issue cache), `rw_sync_v1` (per-repo issue sync timestamps), `rw_sweep_anim` (issue chart animation; on unless set to `'0'`), `rw_star_colors_v2` (star chart repo→color slot map), `rw_star_shown` (star chart colored-repo count, 1–8, default 4), `rw_repo_cache_v1` (each repo's last good `fetchRepo()` result, shown when rate-limited).
 
 ### Repo-rename matching
 
 `S.repos` holds whatever raw `owner/repo` strings the user typed into Settings. If a repo gets renamed on GitHub afterward, GitHub transparently redirects most endpoints for the old name, so fetches keep working — but the old string itself never updates. `fetchRepo()` is the only place that resolves the canonical name (`repo.full_name` from the API response, stored on each `S.data` entry); everything else must match against that, never against `S.repos` directly. Getting this wrong doesn't error — it just silently drops that one repo's data with no visible symptom. It's recurred three times so far: `pollEvents()` (event feed), `loadTraffic()` (traffic chart), and `load()`'s CI-status merge (see `tests/repo-rename-drift.spec.js` for the full history and `tests/lint-repo-matching.spec.js` for the static guard against a fourth). `load()`'s CI merge in particular used to `.find()` by name; fixed to zip `S.data` and `fetchWorkflowRuns()`'s results by index instead, since both are produced by the same `S.repos.map(...)` call and `Promise.all` preserves order — no name lookup needed at all.
+
+### Rate limit without a PAT
+
+GitHub allows 60 unauthenticated API calls an hour per IP. `fetchRepo()` makes 3 calls per repo (`/repos/{r}`, `/releases/latest`, `/issues`): open PRs are counted from the `/issues` response, which includes them as items with a `pull_request` key. It used to make a 4th call to `/pulls`, and 40 calls a load for 10 repos meant a second load within the hour ran out partway, so rows showed `error 403`. Worse, a refused list call was treated as empty, so rows also showed false zeros (#38). Now a 403/429 on any of a repo's calls counts as rate-limited. `fetchRepo()` then returns that repo's last good result from `rw_repo_cache_v1`, with `stale_at` set, and the summary bar says how many repos come from saved data. With nothing saved, the row says "GitHub rate limit reached — add a PAT in Settings, or wait Nm" instead of `error 403`. [Proposed — unconfirmed] The cache is keyed by the Settings entry (the string `fetchRepo()` was called with), so it's a lookup of that same string, not a match against a resolved name. See `tests/no-pat-rate-limit.spec.js`.
 
 ### Issue history sync
 

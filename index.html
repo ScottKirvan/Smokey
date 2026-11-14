@@ -769,21 +769,40 @@ function renderRateLimit() {
 const ATTENTION_LABELS = ['user-report', 'obsidian-update'];
 const hasAttentionLabel = i => (i.labels || []).some(l => ATTENTION_LABELS.includes(l.name));
 
+// Each repo's last good fetchRepo() result, keyed by its Settings entry, shown
+// when GitHub refuses a load for the rate limit (60 calls an hour without a
+// PAT) instead of an error or false zeros.
+const REPO_CACHE_KEY = 'rw_repo_cache_v1';
+function readRepoCache() {
+  try { return JSON.parse(localStorage.getItem(REPO_CACHE_KEY) || '{}'); } catch(e) { return {}; }
+}
+function saveRepoCache(fullName, data) {
+  const cache = readRepoCache();
+  cache[fullName] = { at: new Date().toISOString(), data };
+  try { localStorage.setItem(REPO_CACHE_KEY, JSON.stringify(cache)); } catch(e) {}
+}
+const isRateLimited = res => res.status === 403 || res.status === 429;
+
 async function fetchRepo(fullName, headers) {
   const base = `https://api.github.com/repos/${fullName}`;
   try {
-    const [repoRes, relRes, prRes, issueRes] = await Promise.all([
+    // /issues also returns open pull requests (items with a pull_request key),
+    // so PRs need no call of their own: 3 calls per repo, not 4 (#38).
+    const [repoRes, relRes, issueRes] = await Promise.all([
       fetch(base, { headers }),
       fetch(`${base}/releases/latest`, { headers }),
-      fetch(`${base}/pulls?state=open&per_page=100`, { headers }),
       fetch(`${base}/issues?state=open&per_page=100`, { headers }),
     ]);
     captureRateLimit(repoRes);
+    if ([repoRes, relRes, issueRes].some(isRateLimited)) {
+      const saved = readRepoCache()[fullName];
+      return saved ? { ...saved.data, stale_at: saved.at } : { full_name: fullName, error: 'rate' };
+    }
     if (!repoRes.ok) return { full_name: fullName, error: repoRes.status };
     const repo    = await repoRes.json();
     const release = relRes.ok && relRes.status !== 404 ? await relRes.json() : null;
-    const prs     = prRes.ok    ? await prRes.json()    : [];
     const rawI    = issueRes.ok ? await issueRes.json() : [];
+    const prs     = rawI.filter(i => i.pull_request);
     const issues  = rawI.filter(i => !i.pull_request);
     const owner   = fullName.split('/')[0];
     const me      = S.currentUser || owner;
@@ -792,12 +811,14 @@ async function fetchRepo(fullName, headers) {
     const extI    = issues.filter(i => (i.user?.login !== me && !isBot(i.user)) || hasAttentionLabel(i));
     const issue_split = { bug: 0, feat: 0, misc: 0 };
     for (const i of issues) issue_split[issueCategory((i.labels || []).map(l => l.name))]++;
-    return {
+    const data = {
       full_name: repo.full_name, pushed_at: repo.pushed_at, private: repo.private,
-      latest_release: release?.tag_name ? release : null,
+      latest_release: release?.tag_name ? { tag_name: release.tag_name, published_at: release.published_at } : null,
       open_prs: prs.length, external_prs: extPRs.length,
       open_issues: issues.length, external_issues: extI.length, issue_split,
     };
+    saveRepoCache(fullName, data);
+    return data;
   } catch(e) { return { full_name: fullName, error: 'net' }; }
 }
 
@@ -1184,8 +1205,11 @@ function renderTable(data) {
 
 function rowHTML(d) {
   if (d.error) {
+    const resetMins = S.rateLimit ? Math.max(1, Math.ceil((S.rateLimit.reset * 1000 - Date.now()) / 60000)) : null;
     const msg = d.error===404 ? 'not found or no access'
-              : d.error===401 ? 'unauthorized — check PAT' : `error ${d.error}`;
+              : d.error===401 ? 'unauthorized — check PAT'
+              : d.error==='rate' ? `GitHub rate limit reached — add a PAT in Settings${resetMins ? `, or wait ${resetMins}m` : ''}`
+              : `error ${d.error}`;
     return `<tr><td><span class="repo-link">${esc(repoLabel(d.full_name))}</span></td>
       <td colspan="4" style="font-size:11px;color:var(--text-dim);font-style:italic">${msg}</td></tr>`;
   }
@@ -1287,9 +1311,11 @@ function updateSummary(data) {
   const attn   = valid.filter(d => d.external_prs>0 || d.external_issues>0).length;
   const attnStr= attn > 0 ? ` · ${attn} need attention` : '';
   const modeStr= S.pat ? '' : ' · no PAT (public repos only)';
+  const stale  = valid.filter(d => d.stale_at).length;
+  const staleStr = stale ? ` · rate limited: ${stale} repo${stale === 1 ? '' : 's'} from saved data` : '';
   const timeStr= S.loadedAt ? ` · ${relTimeStr(S.loadedAt.toISOString())}` : '';
   document.getElementById('summaryBar').textContent =
-    `${data.length} repos · ${prs} open PRs · ${issues} open issues${attnStr}${modeStr}${timeStr}`;
+    `${data.length} repos · ${prs} open PRs · ${issues} open issues${attnStr}${modeStr}${staleStr}${timeStr}`;
 }
 function updateSummaryTime() {
   if (S.data.length) updateSummary(S.data);
