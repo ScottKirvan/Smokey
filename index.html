@@ -626,6 +626,11 @@ a.feed-label:hover { color: var(--text-muted); }
       <input type="number" class="field-input" id="starShownInput" min="1" max="8" step="1">
       <div class="field-hint">The most-starred repos each get their own color (1–8); the rest are grouped as "other".</div>
     </div>
+    <div class="field">
+      <div class="field-label">Last push: ignore these branches</div>
+      <input type="text" class="field-input" id="ignoreBranchesInput" placeholder="starlines, traffic-log" autocomplete="off">
+      <div class="field-hint">Pushes to these branches (automated ones, like the Starline and traffic-log workflows) don't count as a repo's last push. Needs a PAT; without one, Last push is GitHub's latest push to any branch.</div>
+    </div>
     <button class="save-btn" onclick="saveConfig()">Save &amp; Refresh</button>
   </div>
 </div>
@@ -664,6 +669,7 @@ const S = {
   showNotifs: false, notifItems: [], notifLastModified: '', notifPollTimer: null,
   sweepAnim: true,
   starShown: 4,
+  ignoreBranches: ['starlines', 'traffic-log'],
   rateLimit: null,
 };
 
@@ -678,6 +684,8 @@ function init() {
     S.showNotifs = localStorage.getItem('rw_notifs') === '1';
     S.sweepAnim  = localStorage.getItem('rw_sweep_anim') !== '0'; // on unless explicitly turned off
     S.starShown  = clampStarShown(localStorage.getItem('rw_star_shown'));
+    const savedIgnore = localStorage.getItem('rw_ignore_branches');
+    if (savedIgnore !== null) S.ignoreBranches = parseBranchList(savedIgnore);
     const savedSortBy = localStorage.getItem('rw_sort_by');
     if (COLS.includes(savedSortBy)) S.sortBy = savedSortBy;
     const savedSortDir = localStorage.getItem('rw_sort_dir');
@@ -723,8 +731,14 @@ async function load() {
       // produced S.data above, so ciArr and S.data are already index-
       // aligned — no need to re-match by name (which would silently drop
       // CI status for a renamed repo, same as the loadTraffic() bug above).
-      const ciArr = await Promise.all(S.repos.map(r => fetchWorkflowRuns(r, headers)));
-      S.data.forEach((d, i) => { d.ci = ciArr[i]; });
+      const [ciArr, pushArr] = await Promise.all([
+        Promise.all(S.repos.map(r => fetchWorkflowRuns(r, headers))),
+        Promise.all(S.repos.map(r => fetchLastPush(r, headers))),
+      ]);
+      S.data.forEach((d, i) => {
+        d.ci = ciArr[i];
+        if (pushArr[i] && !d.error) { d.pushed_at = pushArr[i].at; d.push_beyond = pushArr[i].beyond; d.push_filtered = true; }
+      });
     } catch(e) {
       console.error('PAT-gated fetch failed:', e);
     }
@@ -826,6 +840,32 @@ async function fetchRepo(fullName, headers) {
     saveRepoCache(fullName, data);
     return data;
   } catch(e) { return { full_name: fullName, error: 'net' }; }
+}
+
+// ── Last push (PAT only) ──────────────────────────────
+// GitHub's pushed_at counts a push to any branch, so the weekly Starline and
+// traffic-log workflows made every repo look recently pushed. With a PAT,
+// Last push comes from the repo's activity feed instead: the newest push or
+// merge on a branch not in S.ignoreBranches. Without one it stays pushed_at,
+// so a no-PAT load spends no extra calls on its 60-an-hour limit.
+function parseBranchList(text) {
+  return String(text).split(/[\s,]+/).map(b => b.trim()).filter(Boolean);
+}
+function lastPushFromActivity(list, ignore) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const counted = list.filter(a => a.activity_type !== 'branch_deletion'
+    && !ignore.includes(String(a.ref || '').replace(/^refs\/heads\//, '')));
+  if (counted.length) return { at: counted[0].timestamp, beyond: false };
+  // Every entry was on an ignored branch: the real last push is older than
+  // the oldest entry the feed returned.
+  return { at: list[list.length - 1].timestamp, beyond: true };
+}
+async function fetchLastPush(fullName, headers) {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${fullName}/activity?per_page=100`, { headers });
+    if (!r.ok) return null;
+    return lastPushFromActivity(await r.json(), S.ignoreBranches);
+  } catch(e) { return null; }
 }
 
 const CI_RED    = new Set(['failure','timed_out','startup_failure']);
@@ -1230,7 +1270,7 @@ function rowHTML(d) {
       <a class="repo-link" href="https://github.com/${d.full_name}" target="_blank" rel="noopener">${d.private ? LOCK_ICON : ''}${esc(repoLabel(d.full_name))}</a>
       <div class="repo-ver">${ver}</div>
     </td>
-    <td><span class="time-val ${timeClass(d.pushed_at)}">${relTimeStr(d.pushed_at)}</span></td>
+    <td><span class="time-val ${timeClass(d.pushed_at)}"${d.push_filtered ? ` title="Ignoring pushes to: ${esc(S.ignoreBranches.join(', ') || 'none')}"` : ''}>${d.push_beyond ? '&gt; ' : ''}${relTimeStr(d.pushed_at)}</span></td>
     <td><a class="cnt-link ${d.open_prs===0?'zero':''}" href="https://github.com/${d.full_name}/pulls" target="_blank" rel="noopener">${d.open_prs}</a></td>
     <td>${issueSplitHTML(d)}</td>
     ${ciCellHTML(d)}
@@ -1347,6 +1387,7 @@ function openConfig() {
   document.getElementById('showNotifsToggle').checked = S.showNotifs;
   document.getElementById('sweepAnimToggle').checked = S.sweepAnim;
   document.getElementById('starShownInput').value = S.starShown;
+  document.getElementById('ignoreBranchesInput').value = S.ignoreBranches.join(', ');
   document.getElementById('configOverlay').classList.add('open');
 }
 function closeConfig() { document.getElementById('configOverlay').classList.remove('open'); }
@@ -1359,6 +1400,7 @@ function saveConfig() {
   const showNotifs = document.getElementById('showNotifsToggle').checked;
   const sweepAnim  = document.getElementById('sweepAnimToggle').checked;
   const starShown  = clampStarShown(document.getElementById('starShownInput').value);
+  const ignoreBranches = parseBranchList(document.getElementById('ignoreBranchesInput').value);
   try {
     localStorage.setItem('rw_pat',      newPat);
     localStorage.setItem('rw_repos',    newRepos.join('\n'));
@@ -1367,6 +1409,7 @@ function saveConfig() {
     localStorage.setItem('rw_notifs',   showNotifs ? '1' : '0');
     localStorage.setItem('rw_sweep_anim', sweepAnim ? '1' : '0');
     localStorage.setItem('rw_star_shown', String(starShown));
+    localStorage.setItem('rw_ignore_branches', ignoreBranches.join(', '));
   } catch(e) {}
   stopFeedPoll();  // always clear before potentially re-starting
   stopNotifPoll();
@@ -1375,6 +1418,7 @@ function saveConfig() {
   S.pat = newPat; S.repos = newRepos; S.showOrg = showOrg; S.showFeed = showFeed; S.showNotifs = showNotifs;
   S.sweepAnim = sweepAnim;
   S.starShown = starShown;
+  S.ignoreBranches = ignoreBranches;
   applySweepSetting();
   S.currentUser = ''; S.data = [];
   closeConfig();
