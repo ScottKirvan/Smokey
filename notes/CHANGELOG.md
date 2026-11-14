@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/ScottKirvan/Smokey/compare/v0.6.0...v0.7.0) (2026-11-14)
+
+
+### Features
+
+* count Dependabot PRs for attention and order badges newest first ([4317807](https://github.com/ScottKirvan/Smokey/commit/4317807819887676ca64449c242ba5bde6253579))
+
+
+### Bug Fixes
+
+* add a 7-day cooldown to Dependabot version updates ([a1a1023](https://github.com/ScottKirvan/Smokey/commit/a1a1023e46bf2614ad114134d9a4813676b95449))
+* add Dependabot config for monthly grouped dependency updates ([d8c8945](https://github.com/ScottKirvan/Smokey/commit/d8c89459a2a110e7dda41bdc657e5a7dc60c7bb9))
+
 ## [0.6.0](https://github.com/ScottKirvan/Smokey/compare/v0.5.0...v0.6.0) (2026-11-14)
 
 
