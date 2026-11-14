@@ -5,6 +5,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Smokey">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Smokey</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap">
@@ -73,6 +74,7 @@ header {
   color: var(--text); letter-spacing: -0.03em;
   display: flex; align-items: center; gap: 7px; flex-shrink: 0; user-select: none;
 }
+.wordmark-logo { width: 24px; height: 24px; }
 .pip {
   width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
   box-shadow: 0 0 5px var(--accent); flex-shrink: 0; transition: background 0.3s, box-shadow 0.3s;
@@ -449,8 +451,9 @@ a.feed-label:hover { color: var(--text-muted); }
 
 <header>
   <div class="wordmark">
-    <div class="pip" id="pip"></div>
+    <img class="wordmark-logo" src="favicon.png" alt="">
     Smokey
+    <div class="pip" id="pip"></div>
   </div>
   <div class="header-spacer"></div>
   <button class="icon-btn" id="refreshBtn" title="Refresh (R)" onclick="triggerRefresh()">

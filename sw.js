@@ -1,5 +1,5 @@
-const V = 'rw-1';
-const SHELL = ['./', './manifest.json', './icon-192.png', './icon-512.png'];
+const V = 'rw-2';
+const SHELL = ['./', './manifest.json', './favicon.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)));
