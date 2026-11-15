@@ -12,8 +12,8 @@
 
 ### Bug Fixes
 
-* add a 7-day cooldown to Dependabot version updates ([a1a1023](https://github.com/ScottKirvan/Smokey/commit/a1a1023e46bf2614ad114134d9a4813676b95449))
-* add Dependabot config for monthly grouped dependency updates ([d8c8945](https://github.com/ScottKirvan/Smokey/commit/d8c89459a2a110e7dda41bdc657e5a7dc60c7bb9))
+* add a 7-day cooldown to Dependabot version updates ([#43](https://github.com/ScottKirvan/Smokey/pull/43))
+* add Dependabot config for monthly grouped dependency updates ([#43](https://github.com/ScottKirvan/Smokey/pull/43))
 
 ## [0.6.0](https://github.com/ScottKirvan/Smokey/compare/v0.5.0...v0.6.0) (2026-11-14)
 
