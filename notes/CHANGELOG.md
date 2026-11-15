@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/ScottKirvan/Smokey/compare/v0.6.0...v0.7.0) (2026-11-15)
+
+
+### Features
+
+* color the CI dot by the latest run and flag other failing workflows with a ! ([d85acbd](https://github.com/ScottKirvan/Smokey/commit/d85acbd4751e92ff18bfe5a86e088049e648e5ff))
+* count Dependabot PRs for attention and order badges newest first ([4317807](https://github.com/ScottKirvan/Smokey/commit/4317807819887676ca64449c242ba5bde6253579))
+* show a rocket next to the PR count when a release-please PR is open ([fcd4339](https://github.com/ScottKirvan/Smokey/commit/fcd4339e23f931cb44e300db7ccb9e03a5d992ee))
+
+
+### Bug Fixes
+
+* add a 7-day cooldown to Dependabot version updates ([a1a1023](https://github.com/ScottKirvan/Smokey/commit/a1a1023e46bf2614ad114134d9a4813676b95449))
+* add Dependabot config for monthly grouped dependency updates ([d8c8945](https://github.com/ScottKirvan/Smokey/commit/d8c89459a2a110e7dda41bdc657e5a7dc60c7bb9))
+
 ## [0.6.0](https://github.com/ScottKirvan/Smokey/compare/v0.5.0...v0.6.0) (2026-11-14)
 
 
