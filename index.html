@@ -300,6 +300,9 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .ci-yellow { background: var(--warn); }
 .ci-ice    { background: var(--ice);  box-shadow: 0 0 5px var(--ice); }
 .ci-red    { background: var(--ext);  box-shadow: 0 0 5px var(--ext); }
+.release-pr { display: inline-block; margin-left: 4px; color: var(--text-muted); vertical-align: middle; line-height: 0; }
+.release-pr:hover { color: var(--accent); }
+.release-pr svg { width: 13px; height: 13px; }
 
 /* Skeleton */
 @keyframes shimmer {
@@ -885,6 +888,12 @@ function renderRateLimit() {
 const ATTENTION_LABELS = ['user-report', 'obsidian-update'];
 // Bots whose PRs and issues count like a person's (QuKi-Notes' Dependabot PRs).
 const ATTENTION_BOTS = ['dependabot[bot]'];
+// release-please labels its open release PRs `autorelease: pending`; the body
+// line is a fallback for a repo configured with other labels.
+function isReleasePleasePR(p) {
+  return (p.labels || []).some(l => l.name === 'autorelease: pending')
+    || /generated with \[Release Please\]/i.test(p.body || '');
+}
 const hasAttentionLabel = i => (i.labels || []).some(l => ATTENTION_LABELS.includes(l.name));
 
 // Each repo's last good fetchRepo() result, keyed by its Settings entry, shown
@@ -935,6 +944,7 @@ async function fetchRepo(fullName, headers) {
     const extPRs  = prs.filter(p => fromOutside(p.user));
     const extI    = issues.filter(i => fromOutside(i.user) || hasAttentionLabel(i));
     const newest  = items => items.reduce((max, i) => (i.created_at && (!max || i.created_at > max) ? i.created_at : max), null);
+    const rp      = prs.find(isReleasePleasePR);
     const issue_split = { bug: 0, feat: 0, misc: 0 };
     for (const i of issues) issue_split[issueCategory((i.labels || []).map(l => l.name))]++;
     const data = {
@@ -943,6 +953,7 @@ async function fetchRepo(fullName, headers) {
       open_prs: prs.length, external_prs: extPRs.length,
       open_issues: issues.length, external_issues: extI.length, issue_split,
       newest_ext_pr_at: newest(extPRs), newest_ext_issue_at: newest(extI),
+      release_pr: rp ? { number: rp.number, title: rp.title, url: rp.html_url } : null,
     };
     saveRepoCache(fullName, data);
     return data;
@@ -1381,7 +1392,7 @@ function rowHTML(d) {
       <div class="repo-ver">${ver}</div>
     </td>
     <td><span class="time-val ${timeClass(d.pushed_at)}"${d.push_filtered ? ` title="Ignoring pushes to: ${esc(S.ignoreBranches.join(', ') || 'none')}"` : ''}>${d.push_beyond ? '&gt; ' : ''}${relTimeStr(d.pushed_at)}</span></td>
-    <td><a class="cnt-link ${d.open_prs===0?'zero':''}" href="https://github.com/${d.full_name}/pulls" target="_blank" rel="noopener">${d.open_prs}</a></td>
+    <td><a class="cnt-link ${d.open_prs===0?'zero':''}" href="https://github.com/${d.full_name}/pulls" target="_blank" rel="noopener">${d.open_prs}</a>${releasePrHTML(d.release_pr)}</td>
     <td>${issueSplitHTML(d)}</td>
     ${ciCellHTML(d)}
   </tr>`;
@@ -1405,6 +1416,11 @@ function issueSplitHTML(d) {
 }
 
 const LOCK_ICON = '<svg class="lock-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6" rx="1"/><path d="M5.5 7V4.75a2.5 2.5 0 015 0V7"/></svg>';
+const ROCKET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>';
+function releasePrHTML(rp) {
+  if (!rp) return '';
+  return `<a class="release-pr" href="${esc(rp.url)}" target="_blank" rel="noopener" title="${esc(`Release PR open: ${rp.title}`)}">${ROCKET_ICON}</a>`;
+}
 
 function repoLabel(fullName) {
   const [owner, name] = fullName.split('/');
