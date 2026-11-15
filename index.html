@@ -300,6 +300,14 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .ci-yellow { background: var(--warn); }
 .ci-ice    { background: var(--ice);  box-shadow: 0 0 5px var(--ice); }
 .ci-red    { background: var(--ext);  box-shadow: 0 0 5px var(--ext); }
+.ci-bang {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700;
+  margin-left: 5px; vertical-align: middle; text-decoration: none;
+}
+.ci-bang:hover { opacity: 0.7; }
+.ci-bang-yellow { color: var(--warn); }
+.ci-bang-ice    { color: var(--ice); text-shadow: 0 0 5px var(--ice); }
+.ci-bang-red    { color: var(--ext); text-shadow: 0 0 5px var(--ext); }
 .release-pr { display: inline-block; margin-left: 4px; color: var(--text-muted); vertical-align: middle; line-height: 0; }
 .release-pr:hover { color: var(--accent); }
 .release-pr svg { width: 13px; height: 13px; }
@@ -998,34 +1006,33 @@ async function fetchWorkflowRuns(fullName, headers) {
     );
     if (!r.ok) return null;
     const { workflow_runs } = await r.json();
-    if (!workflow_runs?.length) return { level: 'none', workflows: [] };
+    if (!workflow_runs?.length) return { level: 'none', others: null, workflows: [] };
 
     // Dedupe: take the latest run per workflow name (API returns newest-first)
     const seen = new Set(), latest = [];
     for (const run of workflow_runs) {
       if (!seen.has(run.name)) { seen.add(run.name); latest.push(run); }
     }
-
-    for (const run of latest) {
-      if (CI_RED.has(run.conclusion || run.status))    return { level: 'red',    workflows: latest };
-    }
-    for (const run of latest) {
-      if (CI_ICE.has(run.conclusion || run.status))    return { level: 'ice',    workflows: latest };
-    }
-    for (const run of latest) {
-      if (CI_YELLOW.has(run.conclusion || run.status)) return { level: 'yellow', workflows: latest };
-    }
-    return { level: 'green', workflows: latest };
+    const others = worstCiLevel(latest.slice(1));
+    return { level: runCiLevel(latest[0]), others: others === 'green' ? null : others, workflows: latest };
   } catch(e) { return null; }
+}
+
+function runCiLevel(run) {
+  const c = run.conclusion || run.status;
+  return CI_RED.has(c) ? 'red' : CI_ICE.has(c) ? 'ice' : CI_YELLOW.has(c) ? 'yellow' : 'green';
+}
+function worstCiLevel(runs) {
+  return runs.map(runCiLevel).reduce((worst, l) => (CI_LEVEL[l] < CI_LEVEL[worst] ? l : worst), 'green');
 }
 
 function ciTooltip(ci) {
   if (!ci || ci.level === 'none') return 'No workflow runs found';
-  return ci.workflows.map(run => {
+  return ci.workflows.map((run, i) => {
     const c = run.conclusion || run.status;
     const icon = CI_RED.has(c) ? '✗' : CI_ICE.has(c) ? '⏸' : CI_YELLOW.has(c) ? '○' : '✓';
     const detail = (CI_RED.has(c) || CI_ICE.has(c) || CI_YELLOW.has(c)) ? ` (${c})` : '';
-    return `${icon} ${run.name}${detail}`;
+    return `${icon} ${run.name}${detail}${i === 0 ? ' (latest run)' : ''}`;
   }).join('\n');
 }
 
@@ -1039,8 +1046,12 @@ function ciCellHTML(d) {
   if (d.ci.level === 'none') {
     return `<td><span class="ci-dot" title="No workflow runs found"></span></td>`;
   }
+  const tip = esc(ciTooltip(d.ci));
+  const bang = d.ci.others
+    ? `<a class="ci-bang ci-bang-${d.ci.others}" href="https://github.com/${d.full_name}/actions" target="_blank" rel="noopener" title="${tip}">!</a>`
+    : '';
   return `<td><a class="ci-dot ci-${d.ci.level}" href="https://github.com/${d.full_name}/actions"
-    target="_blank" rel="noopener" title="${esc(ciTooltip(d.ci))}"></a></td>`;
+    target="_blank" rel="noopener" title="${tip}"></a>${bang}</td>`;
 }
 
 // ── Render all ────────────────────────────────────────
@@ -1434,7 +1445,7 @@ const SORT_KEYS = {
   commit: d => new Date(d.pushed_at || 0).getTime(),
   prs:    d => d.open_prs    || 0,
   issues: d => d.open_issues || 0,
-  ci:     d => d.ci ? (CI_LEVEL[d.ci.level] ?? 99) : 99,
+  ci:     d => d.ci ? (CI_LEVEL[d.ci.level] ?? 99) * 10 + (d.ci.others ? CI_LEVEL[d.ci.others] : 9) : 999,
 };
 const COLS = ['name','commit','prs','issues','ci'];
 
