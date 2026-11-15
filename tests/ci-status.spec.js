@@ -144,12 +144,14 @@ test.describe('CI cell rendering', () => {
       td.innerHTML = ciCellHTML({ full_name: 'owner/repo', ci: { level: 'green', others: 'red',
         workflows: [{ name: 'build', conclusion: 'success' }, { name: 'deploy', conclusion: 'failure' }] } });
       const bang = td.querySelector('.ci-bang');
-      return { dot: td.querySelector('.ci-dot').className, bang: bang?.className, text: bang?.textContent,
+      return { dot: td.querySelector('.ci-dot').className, bang: bang?.className, tag: bang?.tagName, inLink: !!bang?.closest('a'), text: bang?.textContent,
         color: bang && getComputedStyle(bang).color, red: getComputedStyle(document.documentElement).getPropertyValue('--ext').trim() };
     });
     expect(cell.dot).toBe('ci-dot ci-green');
     expect(cell.bang).toBe('ci-bang ci-bang-red');
     expect(cell.text).toBe('!');
+    expect(cell.tag).toBe('SPAN');
+    expect(cell.inLink).toBe(false);
     const hex = '#' + cell.color.match(/\d+/g).slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('');
     expect(hex).toBe(cell.red);
   });

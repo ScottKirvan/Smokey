@@ -65,14 +65,14 @@ test.describe('rocket in the PRs column', () => {
   const row = (release_pr) => ({ full_name: 'ScottKirvan/Smokey', pushed_at: '2026-11-14T00:00:00Z', open_prs: 2, external_prs: 0,
     open_issues: 0, external_issues: 0, issue_split: { bug: 0, feat: 0, misc: 0 }, latest_release: null, release_pr });
 
-  test('shows a rocket linking to the release PR next to the count', async ({ page }) => {
+  test('shows a rocket, not a link, with the release PR\'s title next to the count', async ({ page }) => {
     const cell = await page.evaluate((d) => {
       S.data = [d]; renderAll();
       const td = document.querySelector('#tbody tr').children[2];
-      const rocket = td.querySelector('a.release-pr');
-      return { count: td.querySelector('.cnt-link').textContent, href: rocket?.getAttribute('href'), title: rocket?.getAttribute('title'), svg: !!rocket?.querySelector('svg') };
+      const rocket = td.querySelector('.release-pr');
+      return { count: td.querySelector('.cnt-link').textContent, tag: rocket?.tagName, inLink: !!rocket?.closest('a'), title: rocket?.getAttribute('title'), svg: !!rocket?.querySelector('svg') };
     }, row({ number: 41, title: 'chore(main): release 0.7.0', url: 'https://github.com/ScottKirvan/Smokey/pull/41' }));
-    expect(cell).toEqual({ count: '2', href: 'https://github.com/ScottKirvan/Smokey/pull/41', title: 'Release PR open: chore(main): release 0.7.0', svg: true });
+    expect(cell).toEqual({ count: '2', tag: 'SPAN', inLink: false, title: 'Release PR open: chore(main): release 0.7.0', svg: true });
   });
 
   test('no release PR, no rocket', async ({ page }) => {
