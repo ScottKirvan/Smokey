@@ -80,3 +80,35 @@ test.describe('rocket in the PRs column', () => {
     expect(n).toBe(0);
   });
 });
+
+// On a phone the rocket and the CI "!" wrapped onto a line of their own.
+// Each must sit right against what it follows, on the same line.
+test.describe('icons stay with their neighbor on a phone', () => {
+  test.use({ viewport: { width: 375, height: 700 } });
+  test.beforeEach(async ({ page }) => { await gotoQuiet(page); });
+
+  test('no gap and no wrap before the rocket or the !', async ({ page }) => {
+    const out = await page.evaluate(() => {
+      S.pat = 'fake-pat';
+      S.data = [{ full_name: 'ScottKirvan/Smokey', pushed_at: '2026-11-14T00:00:00Z', open_prs: 2, external_prs: 0,
+        open_issues: 12, external_issues: 0, issue_split: { bug: 10, feat: 1, misc: 1 }, latest_release: null,
+        release_pr: { number: 41, title: 'chore(main): release 0.7.0', url: 'https://github.com/ScottKirvan/Smokey/pull/41' },
+        ci: { level: 'green', others: 'red', workflows: [{ name: 'build', conclusion: 'success' }, { name: 'deploy', conclusion: 'failure' }] } }];
+      renderAll();
+      const pair = (a, b) => {
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        return { gap: Math.round((rb.left - ra.right) * 10) / 10, sameLine: rb.top < ra.bottom && rb.bottom > ra.top };
+      };
+      const row = document.querySelector('#tbody tr');
+      for (const td of row.children) td.style.width = '1px'; // squeeze each cell to its narrowest, as a phone does
+      return {
+        rocket: pair(row.querySelector('.cnt-link'), row.querySelector('.release-pr')),
+        bang: pair(row.querySelector('.ci-dot'), row.querySelector('.ci-bang')),
+      };
+    });
+    expect(out.rocket.sameLine).toBe(true);
+    expect(out.bang.sameLine).toBe(true);
+    expect(out.rocket.gap).toBeLessThanOrEqual(0);
+    expect(out.bang.gap).toBeLessThanOrEqual(0);
+  });
+});

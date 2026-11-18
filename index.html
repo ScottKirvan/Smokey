@@ -302,12 +302,14 @@ a.ci-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .ci-red    { background: var(--ext);  box-shadow: 0 0 5px var(--ext); }
 .ci-bang {
   font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700;
-  margin-left: 5px; vertical-align: middle; text-decoration: none;
+  line-height: 1; text-decoration: none;
 }
 .ci-bang-yellow { color: var(--warn); }
 .ci-bang-ice    { color: var(--ice); text-shadow: 0 0 5px var(--ice); }
 .ci-bang-red    { color: var(--ext); text-shadow: 0 0 5px var(--ext); }
-.release-pr { display: inline-block; margin-left: 4px; color: var(--text-muted); vertical-align: middle; line-height: 0; }
+.release-pr { display: inline-block; color: var(--text-muted); line-height: 0; }
+.mark-pair { display: inline-flex; align-items: center; white-space: nowrap; vertical-align: middle; }
+.mark-pair .cnt-link { min-width: 0; }
 .release-pr svg { width: 13px; height: 13px; }
 
 /* Skeleton */
@@ -1048,8 +1050,8 @@ function ciCellHTML(d) {
   const bang = d.ci.others
     ? `<span class="ci-bang ci-bang-${d.ci.others}" title="${tip}">!</span>`
     : '';
-  return `<td><a class="ci-dot ci-${d.ci.level}" href="https://github.com/${d.full_name}/actions"
-    target="_blank" rel="noopener" title="${tip}"></a>${bang}</td>`;
+  return `<td><span class="mark-pair"><a class="ci-dot ci-${d.ci.level}" href="https://github.com/${d.full_name}/actions"
+    target="_blank" rel="noopener" title="${tip}"></a>${bang}</span></td>`;
 }
 
 // ── Render all ────────────────────────────────────────
@@ -1401,7 +1403,7 @@ function rowHTML(d) {
       <div class="repo-ver">${ver}</div>
     </td>
     <td><span class="time-val ${timeClass(d.pushed_at)}"${d.push_filtered ? ` title="Ignoring pushes to: ${esc(S.ignoreBranches.join(', ') || 'none')}"` : ''}>${d.push_beyond ? '&gt; ' : ''}${relTimeStr(d.pushed_at)}</span></td>
-    <td><a class="cnt-link ${d.open_prs===0?'zero':''}" href="https://github.com/${d.full_name}/pulls" target="_blank" rel="noopener">${d.open_prs}</a>${releasePrHTML(d.release_pr)}</td>
+    <td><span class="mark-pair"><a class="cnt-link ${d.open_prs===0?'zero':''}" href="https://github.com/${d.full_name}/pulls" target="_blank" rel="noopener">${d.open_prs}</a>${releasePrHTML(d.release_pr)}</span></td>
     <td>${issueSplitHTML(d)}</td>
     ${ciCellHTML(d)}
   </tr>`;
