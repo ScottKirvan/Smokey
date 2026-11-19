@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/ScottKirvan/Smokey/compare/v0.7.0...v0.8.0) (2026-11-19)
+
+
+### Features
+
+* make the Repo header sort by name or latest release, each up and down ([936e7db](https://github.com/ScottKirvan/Smokey/commit/936e7dbbb20ef6e591bb98811529443e5dbb314d))
+
+
+### Bug Fixes
+
+* keep the rocket and the CI ! against their neighbor so they don't wrap on a phone ([85b528b](https://github.com/ScottKirvan/Smokey/commit/85b528b996249930617d269a6e1579e3351b3ae7))
+* make the blocked/waiting CI color purple so it can't be mistaken for green ([c93a6ec](https://github.com/ScottKirvan/Smokey/commit/c93a6ecdd7b32e7909e9804048a194fae300ab3a))
+* make the release PR rocket and the CI ! plain marks instead of links ([7337f33](https://github.com/ScottKirvan/Smokey/commit/7337f337aecd8c0ed08f7cef5fc41194fb50a4de))
+
 ## [0.7.0](https://github.com/ScottKirvan/Smokey/compare/v0.6.0...v0.7.0) (2026-11-15)
 
 
