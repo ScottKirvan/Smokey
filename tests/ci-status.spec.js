@@ -180,3 +180,32 @@ test.describe('CI cell rendering', () => {
     expect(order).toEqual(['red', 'greenRed', 'greenYellow', 'greenClean']);
   });
 });
+
+// Scott couldn't tell the blocked/waiting dot from the green one: the old cyan
+// (#58d4e8 dark, #0891b2 light) sat only 20 / 17 OKLab ΔE from green, and both
+// glow at 9px. Distance is measured in OKLab (×100), normal vision.
+test.describe('CI dot colors stay apart', () => {
+  const oklabDE = (a, b) => {
+    const lab = hex => {
+      const [r, g, bl] = [1, 3, 5].map(i => { const c = parseInt(hex.slice(i, i + 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+      const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * bl);
+      const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * bl);
+      const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * bl);
+      return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+    };
+    const [x, y] = [lab(a), lab(b)];
+    return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) * 100;
+  };
+
+  for (const scheme of ['dark', 'light']) {
+    test(`blocked/waiting is far from green in ${scheme} mode`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto('/index.html');
+      const c = await page.evaluate(() => {
+        const cs = getComputedStyle(document.documentElement);
+        return { good: cs.getPropertyValue('--good').trim(), ice: cs.getPropertyValue('--ice').trim() };
+      });
+      expect(oklabDE(c.good, c.ice)).toBeGreaterThanOrEqual(30);
+    });
+  }
+});
