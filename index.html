@@ -587,7 +587,7 @@ a.feed-label:hover { color: var(--text-muted); }
   <table>
     <thead>
       <tr>
-        <th id="th-name"    onclick="setSort('name')"   ><div class="th-inner">Repo    <span class="sort-arrow" id="arr-name"></span></div></th>
+        <th id="th-name"    onclick="setSort('name')"    title="Sort by name, then by latest release"><div class="th-inner"><span id="lbl-name">Repo</span> <span class="sort-arrow" id="arr-name"></span></div></th>
         <th id="th-commit"  onclick="setSort('commit')" ><div class="th-inner">Last Push <span class="sort-arrow" id="arr-commit">↑</span></div></th>
         <th id="th-prs"     onclick="setSort('prs')"    ><div class="th-inner">PRs     <span class="sort-arrow" id="arr-prs"></span></div></th>
         <th id="th-issues"  onclick="setSort('issues')" ><div class="th-inner">Issues  <span class="sort-arrow" id="arr-issues"></span></div></th>
@@ -698,7 +698,7 @@ function init() {
     const savedIgnore = localStorage.getItem('rw_ignore_branches');
     if (savedIgnore !== null) S.ignoreBranches = parseBranchList(savedIgnore);
     const savedSortBy = localStorage.getItem('rw_sort_by');
-    if (COLS.includes(savedSortBy)) S.sortBy = savedSortBy;
+    if (SORT_FIELDS.includes(savedSortBy)) S.sortBy = savedSortBy;
     const savedSortDir = localStorage.getItem('rw_sort_dir');
     if (savedSortDir === 'asc' || savedSortDir === 'desc') S.sortDir = savedSortDir;
   } catch(e) { S.repos = DEFAULT_REPOS.slice(); }
@@ -1442,24 +1442,34 @@ function repoLabel(fullName) {
 const CI_LEVEL = { red: 0, ice: 1, yellow: 2, green: 3, none: 4 };
 const SORT_KEYS = {
   name:   d => (d.full_name || '').toLowerCase(),
+  release: d => d.latest_release?.published_at ? new Date(d.latest_release.published_at).getTime() : null,
   commit: d => new Date(d.pushed_at || 0).getTime(),
   prs:    d => d.open_prs    || 0,
   issues: d => d.open_issues || 0,
   ci:     d => d.ci ? (CI_LEVEL[d.ci.level] ?? 99) * 10 + (d.ci.others ? CI_LEVEL[d.ci.others] : 9) : 999,
 };
 const COLS = ['name','commit','prs','issues','ci'];
+const SORT_FIELDS = [...COLS, 'release'];
+const SORT_HEADER = { release: 'name' };
+// Clicking the Repo header steps through these, then wraps.
+const NAME_CYCLE = [['name','asc'], ['name','desc'], ['release','asc'], ['release','desc']];
 
 function sortData(data) {
   const key = SORT_KEYS[S.sortBy] || SORT_KEYS.commit;
+  const byName = (a, b) => SORT_KEYS.name(a).localeCompare(SORT_KEYS.name(b));
   return [...data].sort((a,b) => {
     const av = key(a), bv = key(b);
+    if (av === null || bv === null) return (av === null) - (bv === null) || byName(a, b);
     if (typeof av === 'string') return S.sortDir==='asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     return S.sortDir === 'asc' ? av - bv : bv - av;
   });
 }
 
 function setSort(field) {
-  if (S.sortBy === field) {
+  if (field === 'name') {
+    const i = NAME_CYCLE.findIndex(([f, d]) => f === S.sortBy && d === S.sortDir);
+    [S.sortBy, S.sortDir] = NAME_CYCLE[(i + 1) % NAME_CYCLE.length];
+  } else if (S.sortBy === field) {
     S.sortDir = S.sortDir === 'asc' ? 'desc' : 'asc';
   } else {
     S.sortBy  = field;
@@ -1476,11 +1486,14 @@ function setSort(field) {
 
 function updateSortHeaders() {
   const arrow = S.sortDir === 'asc' ? '↑' : '↓';
+  const activeCol = SORT_HEADER[S.sortBy] || S.sortBy;
+  const lbl = document.getElementById('lbl-name');
+  if (lbl) lbl.textContent = S.sortBy === 'release' ? 'Release' : 'Repo';
   COLS.forEach(c => {
     const th  = document.getElementById(`th-${c}`);
     const arr = document.getElementById(`arr-${c}`);
     if (!th || !arr) return;
-    const active = c === S.sortBy;
+    const active = c === activeCol;
     th.classList.toggle('active', active);
     arr.textContent = active ? arrow : '';
   });
